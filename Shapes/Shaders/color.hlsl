@@ -11,11 +11,21 @@
 #endif
 
 #include "lightingUtil.hlsl"
+
+Texture2D gDiffuseMap : register(t0);
+
+SamplerState gsamPointWrap : register(s0);
+SamplerState gsamPointClamp : register(s1);
+SamplerState gsamLinearWrap : register(s2);
+SamplerState gsamLinearClamp : register(s3);
+SamplerState gsamAnisotropicWrap : register(s4);
+SamplerState gsamAnisotropicClamp : register(s5);
  
 cbuffer cbPerObject : register(b0)
 {
 	float4x4 gWorld; 
     float4x4 gInvTransWorld;
+    float4x4 gTexTransform;
 };
 
 cbuffer cbPass : register(b1)
@@ -56,7 +66,7 @@ struct VertexIn
 {
 	float3 PosL  : POSITION;
     float3 NormalL : NORMAL;
-    float2 TexCoord : TEXCOORD;
+    float2 TexC : TEXCOORD;
 };
 
 struct VertexOut
@@ -64,6 +74,7 @@ struct VertexOut
 	float4 PosH  : SV_POSITION;
     float3 NormalW : NORMAL;
     float3 PosW : POSITION;
+    float2 TexC : TEXCOORD;
 };
 
 
@@ -79,21 +90,26 @@ VertexOut VS(VertexIn vin)
     vout.NormalW = mul(float4(vin.NormalL, 0.0f), gInvTransWorld).xyz;
 
     vout.PosH = mul(posW, gViewProj);
+
+    float4 TexC = mul(float4(vin.TexC, 0.0f, 1.0f), gMatTransform);
+
+    vout.TexC = mul(TexC, gTexTransform).xy;
     
     return vout;
 }
 
 float4 PS(VertexOut pin) : SV_Target
 {
+    float4 diffuseAlbedo = gDiffuseMap.Sample(gsamAnisotropicWrap, pin.TexC);
 
     pin.NormalW = normalize(pin.NormalW);
     float3 toEyeW = normalize(gEyePosW - pin.PosW);
 
-    float4 ambient = gAmbientLight * gDiffuseAlbedo;
+    float4 ambient = gAmbientLight * diffuseAlbedo;
 
     const float shininess = 1 - gRoughness;
 
-    Material mat = { gDiffuseAlbedo, gFrensnelR0, shininess };
+    Material mat = { diffuseAlbedo, gFrensnelR0, shininess };
 
     float3 shadowFactor = 1.0f;
 
@@ -101,7 +117,7 @@ float4 PS(VertexOut pin) : SV_Target
 
     float4 litColor = directLight + ambient;
 
-    litColor.a = gDiffuseAlbedo.a;
+    litColor.a = diffuseAlbedo.a;
 
     return litColor;
 }
