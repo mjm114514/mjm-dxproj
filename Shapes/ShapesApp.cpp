@@ -1,13 +1,7 @@
-//***************************************************************************************
-// ShapesApp.cpp by Frank Luna (C) 2015 All Rights Reserved.
-//
-// Hold down '1' key to view scene in wireframe mode.
-//***************************************************************************************
-
-#include "Common/d3dApp.h"
-#include "Common/MathHelper.h"
-#include "Common/UploadBuffer.h"
-#include "Common/GeometryGenerator.h"
+#include "../Common/d3dApp.h"
+#include "../Common/MathHelper.h"
+#include "../Common/UploadBuffer.h"
+#include "../Common/GeometryGenerator.h"
 #include "FrameResource.h"
 
 using Microsoft::WRL::ComPtr;
@@ -550,9 +544,9 @@ void ShapesApp::BuildShadersAndInputLayout()
 
 void ShapesApp::LoadTextures(){
 	auto bricks0 = std::make_unique<Texture>();
-	bricks0->Filename = L"Textures\\bricks.dds";
+	bricks0->Filename = L"..\\Textures\\bricks.dds";
 	bricks0->Name = "bricks0";
-	ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(
+	ThrowIfFailed(CreateDDSTextureFromFile12(
 		md3dDevice.Get(),
 		mCommandList.Get(),
 		bricks0->Filename.c_str(),
@@ -562,8 +556,8 @@ void ShapesApp::LoadTextures(){
 
 	auto stone = std::make_unique<Texture>();
 	stone->Name = "stone0";
-	stone->Filename = L"Textures\\stone.dds";
-	ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(
+	stone->Filename = L"..\\Textures\\stone.dds";
+	ThrowIfFailed(CreateDDSTextureFromFile12(
 		md3dDevice.Get(),
 		mCommandList.Get(),
 		stone->Filename.c_str(),
@@ -573,8 +567,8 @@ void ShapesApp::LoadTextures(){
 
 	auto tile = std::make_unique<Texture>();
 	tile->Name = "tile0";
-	tile->Filename = L"Textures\\tile.dds";
-	ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(
+	tile->Filename = L"..\\Textures\\tile.dds";
+	ThrowIfFailed(CreateDDSTextureFromFile12(
 		md3dDevice.Get(),
 		mCommandList.Get(),
 		tile->Filename.c_str(),
@@ -584,8 +578,8 @@ void ShapesApp::LoadTextures(){
 
 	auto skull = std::make_unique<Texture>();
 	skull->Name = "skull";
-	skull->Filename = L"Textures\\white1x1.dds";
-	ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(
+	skull->Filename = L"..\\Textures\\white1x1.dds";
+	ThrowIfFailed(CreateDDSTextureFromFile12(
 		md3dDevice.Get(),
 		mCommandList.Get(),
 		skull->Filename.c_str(),
@@ -659,7 +653,7 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> ShapesApp::GetStaticSamplers(){
 }
 
 void ShapesApp::BuildSkull() {
-    std::ifstream fin("Models/skull.txt");
+    std::ifstream fin("..\\Models\\skull.txt");
 
     if (!fin)
     {
@@ -946,6 +940,7 @@ void ShapesApp::BuildPSOs()
     //
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC opaqueWireframePsoDesc = opaquePsoDesc;
+	opaqueWireframePsoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
     ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&opaqueWireframePsoDesc, IID_PPV_ARGS(&mPSOs["opaque_wireframe"])));
 }
 
