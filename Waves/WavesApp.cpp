@@ -51,6 +51,8 @@ struct RenderItem
 enum class RenderLayer : int
 {
     Opaque = 0,
+    transparent,
+    AlphaTested,
     Count
 };
 
@@ -284,7 +286,18 @@ void WavesApp::Draw(const GameTimer& gt)
     auto passCB = mCurrFrameResource->PassCB->Resource();
     mCommandList->SetGraphicsRootConstantBufferView(1, passCB->GetGPUVirtualAddress());
 
+
+    // Draw another layer uses different Pipeline
+
+    mCommandList->SetPipelineState(mPSOs["opaque"].Get());
     DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
+
+    mCommandList->SetPipelineState(mPSOs["alphaTested"].Get());
+    DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::AlphaTested]);
+
+    mCommandList->SetPipelineState(mPSOs["transparent"].Get());
+    DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::transparent]);
+
 
     // Indicate a state transition on the resource usage.
     mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(CurrentBackBuffer(),
@@ -667,8 +680,21 @@ void WavesApp::BuildDescriptorHeaps(){
 
 void WavesApp::BuildShadersAndInputLayout()
 {
+
+    const D3D_SHADER_MACRO defines[] = {
+        "FOG", "1",
+        NULL, NULL
+    };
+
+    const D3D_SHADER_MACRO alphaTestDefines[] = {
+        "FOG", "1",
+        "ALPHA_TEST", "1",
+        NULL, NULL
+    };
+
     mShaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\color.hlsl", nullptr, "VS", "vs_5_0");
-    mShaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\color.hlsl", nullptr, "PS", "ps_5_0");
+    mShaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\color.hlsl", defines, "PS", "ps_5_0");
+    mShaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\color.hlsl", alphaTestDefines, "PS", "ps_5_0");
 
     mInputLayout =
     {
@@ -866,6 +892,36 @@ void WavesApp::BuildPSOs()
     opaquePsoDesc.SampleDesc.Quality = m4xMsaaState ? (m4xMsaaQuality - 1) : 0;
     opaquePsoDesc.DSVFormat = mDepthStencilFormat;
     ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&opaquePsoDesc, IID_PPV_ARGS(&mPSOs["opaque"])));
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC alphaTestedPsoDesc = opaquePsoDesc;
+    alphaTestedPsoDesc.PS = {
+        reinterpret_cast<BYTE*>(mShaders["alphaTestedPS"]->GetBufferPointer()),
+        mShaders["alphaTestedPS"]->GetBufferSize()
+    };
+    alphaTestedPsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+
+    ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&alphaTestedPsoDesc, IID_PPV_ARGS(&mPSOs["alphaTested"])));
+
+    // Build transparent PSO
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC transparencyBlendPsoDesc = opaquePsoDesc;
+
+    D3D12_RENDER_TARGET_BLEND_DESC transparencyBlendDesc;
+    transparencyBlendDesc.BlendEnable = true;
+    transparencyBlendDesc.LogicOpEnable = false;
+    transparencyBlendDesc.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+    transparencyBlendDesc.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+    transparencyBlendDesc.SrcBlendAlpha = D3D12_BLEND_ONE;
+    transparencyBlendDesc.DestBlendAlpha = D3D12_BLEND_ZERO;
+    transparencyBlendDesc.BlendOp = D3D12_BLEND_OP_ADD;
+    transparencyBlendDesc.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    transparencyBlendDesc.LogicOp = D3D12_LOGIC_OP_NOOP;
+    transparencyBlendDesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+    
+    transparencyBlendPsoDesc.BlendState.RenderTarget[0] = transparencyBlendDesc;
+
+    ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&transparencyBlendPsoDesc, IID_PPV_ARGS(&mPSOs["transparent"])));
+
 }
 
 void WavesApp::BuildFrameResources()
@@ -902,7 +958,7 @@ void WavesApp::LoadTextures(){
 
     auto crate = std::make_unique<Texture>();
     crate->Name = "crate";
-    crate->Filename = L"..\\Textures\\WoodCrate01.dds";
+    crate->Filename = L"..\\Textures\\WireFence.dds";
     ThrowIfFailed(CreateDDSTextureFromFile12(
         md3dDevice.Get(),
         mCommandList.Get(),
@@ -922,7 +978,7 @@ void WavesApp::BuildMaterials()
     grass->Name = "grass";
     grass->MatCBIndex = 0;
     grass->DiffuseSrvHeapIndex = 0;
-    grass->DiffuseAlbedo = XMFLOAT4(0.2f, 0.6f, 0.2f, 1.0f);
+    grass->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
     grass->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
     grass->Roughness = 0.125f;
 
@@ -932,7 +988,7 @@ void WavesApp::BuildMaterials()
     water->Name = "water";
     water->MatCBIndex = 1;
     water->DiffuseSrvHeapIndex = 1;
-    water->DiffuseAlbedo = XMFLOAT4(0.0f, 0.2f, 0.6f, 1.0f);
+    water->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 0.5f);
     water->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
     water->Roughness = 0.0f;
 
@@ -964,7 +1020,7 @@ void WavesApp::BuildRenderItems()
 
     mWavesRitem = wavesRitem.get();
 
-    mRitemLayer[(int)RenderLayer::Opaque].push_back(wavesRitem.get());
+    mRitemLayer[(int)RenderLayer::transparent].push_back(wavesRitem.get());
 
     auto gridRitem = std::make_unique<RenderItem>();
     gridRitem->World = MathHelper::Identity4x4();
@@ -989,7 +1045,7 @@ void WavesApp::BuildRenderItems()
     boxRitem->StartIndexLocation = boxRitem->Geo->DrawArgs["box"].StartIndexLocation;
     boxRitem->BaseVertexLocation = boxRitem->Geo->DrawArgs["box"].BaseVertexLocation;
 
-    mRitemLayer[(int)RenderLayer::Opaque].push_back(boxRitem.get());
+    mRitemLayer[(int)RenderLayer::AlphaTested].push_back(boxRitem.get());
 
     mAllRitems.push_back(std::move(wavesRitem));
     mAllRitems.push_back(std::move(gridRitem));

@@ -47,6 +47,11 @@ cbuffer cbPass : register(b1)
 
     float4 gAmbientLight;
 
+    float4 gFogColor;
+    float gFogStart;
+    float gFogRange;
+    float2 cbPerObjectPad2;
+
     // Indices [0, NUM_DIR_LIGHTS) are directional lights;
     // indices [NUM_DIR_LIGHTS, NUM_DIR_LIGHTS+NUM_POINT_LIGHTS) are point lights;
     // indices [NUM_DIR_LIGHTS+NUM_POINT_LIGHTS, NUM_DIR_LIGHTS+NUM_POINT_LIGHT+NUM_SPOT_LIGHTS)
@@ -100,10 +105,20 @@ VertexOut VS(VertexIn vin)
 
 float4 PS(VertexOut pin) : SV_Target
 {
-    float4 diffuseAlbedo = gDiffuseMap.Sample(gsamAnisotropicWrap, pin.TexC);
+    float4 diffuseAlbedo = gDiffuseMap.Sample(gsamAnisotropicWrap, pin.TexC) * gDiffuseAlbedo;
 
+#ifdef ALPHA_TEST
+    // discard pixel if texture alpha < 0.01. We do this test ASAP in the shader so that we can potentially exit the shader early.
+    // thereby skipping the rest of code.
+    clip(diffuseAlbedo.a - 0.01f);
+#endif
     pin.NormalW = normalize(pin.NormalW);
-    float3 toEyeW = normalize(gEyePosW - pin.PosW);
+
+    float3 toEyeW = gEyePosW - pin.PosW;
+
+    float distToEye = length(toEyeW);
+
+    toEyeW /= distToEye;
 
     float4 ambient = gAmbientLight * diffuseAlbedo;
 
@@ -116,6 +131,11 @@ float4 PS(VertexOut pin) : SV_Target
     float4 directLight = computeLighting(gLights, mat, pin.PosW, pin.NormalW, toEyeW, shadowFactor);
 
     float4 litColor = directLight + ambient;
+
+#ifdef FOG
+    float fogAmount = saturate((distToEye - gFogStart) / gFogRange);
+    litColor = lerp(litColor, gFogColor, fogAmount);
+#endif
 
     litColor.a = diffuseAlbedo.a;
 
