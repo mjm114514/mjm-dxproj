@@ -47,6 +47,8 @@ struct RenderItem
 enum class RenderLayer : int{
 	Opaque = 0,
 	Mirrors,
+	Reflected,
+	Transparent,
 	Count
 };
 
@@ -74,6 +76,7 @@ private:
 	void UpdateObjectCBs(const GameTimer& gt);
 	void UpdateMainPassCB(const GameTimer& gt);
 	void UpdateMaterialCB(const GameTimer& gt);
+	void UpdateReflectedPassCB(const GameTimer& gt);
 
     void BuildDescriptorHeaps();
 	void BuildShaderResourceBufferViews();
@@ -108,6 +111,11 @@ private:
 	std::unordered_map<std::string, std::unique_ptr<Texture>> mTextures;
 
     std::vector<D3D12_INPUT_ELEMENT_DESC> mInputLayout;
+
+	// Cache render items of interest
+
+	RenderItem* mSkullRitem = nullptr;
+	RenderItem* mReflectedSkullRitem = nullptr;
 
 	// List of all the render items.
 	std::vector<std::unique_ptr<RenderItem>> mAllRitems;
@@ -810,7 +818,7 @@ void ShapesApp::BuildMaterials() {
 	skullMat->MatCBIndex = 3;
 	skullMat->DiffuseSrvHeapIndex = 3;
 	skullMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	skullMat->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05);
+	skullMat->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
 	skullMat->Roughness = 0.3f;
 
 	auto ice = std::make_unique<Material>();
@@ -1118,6 +1126,57 @@ void ShapesApp::BuildPSOs()
     D3D12_GRAPHICS_PIPELINE_STATE_DESC opaqueWireframePsoDesc = opaquePsoDesc;
 	opaqueWireframePsoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
     ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&opaqueWireframePsoDesc, IID_PPV_ARGS(&mPSOs["opaque_wireframe"])));
+
+	CD3DX12_BLEND_DESC mirrorBlendState(D3D12_DEFAULT);
+	mirrorBlendState.RenderTarget[0].RenderTargetWriteMask = 0;
+	D3D12_DEPTH_STENCIL_DESC mirrorDSS;
+	mirrorDSS.DepthEnable = true;
+	mirrorDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+	mirrorDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+	mirrorDSS.StencilEnable = true;
+	mirrorDSS.StencilReadMask = 0xff;
+	mirrorDSS.StencilWriteMask = 0xff;
+
+	mirrorDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	mirrorDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	mirrorDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_REPLACE;
+	mirrorDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+
+	// we are not rendering backfacing polygons, so these settings do not matter
+	mirrorDSS.BackFace = mirrorDSS.FrontFace;
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC markMirrorsPsoDesc = opaquePsoDesc;
+	markMirrorsPsoDesc.BlendState = mirrorBlendState;
+	markMirrorsPsoDesc.DepthStencilState = mirrorDSS;
+	ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(
+		&markMirrorsPsoDesc,
+		IID_PPV_ARGS(&mPSOs["markStencilMirrors"])
+	));
+
+	// PSO for stencil reflections.
+
+	D3D12_DEPTH_STENCIL_DESC reflectionsDSS;
+	reflectionsDSS.DepthEnable = true;
+	reflectionsDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	reflectionsDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+	reflectionsDSS.StencilEnable = true;
+	reflectionsDSS.StencilReadMask = 0xff;
+	reflectionsDSS.StencilWriteMask = 0xff;
+
+	reflectionsDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	reflectionsDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	reflectionsDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+	reflectionsDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+
+	reflectionsDSS.BackFace = reflectionsDSS.FrontFace;
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC drawReflectionPsoDesc = opaquePsoDesc;
+	drawReflectionPsoDesc.DepthStencilState = reflectionsDSS;
+	drawReflectionPsoDesc.RasterizerState.FrontCounterClockwise = true;
+	ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(
+		&drawReflectionPsoDesc,
+		IID_PPV_ARGS(&mPSOs["drawStencilReflections"])
+	));
 }
 
 void ShapesApp::BuildFrameResources()
@@ -1164,11 +1223,41 @@ void ShapesApp::BuildRenderItems() {
 	skullRitem->IndexCount = skullRitem->Geo->DrawArgs["skull"].IndexCount;
 	skullRitem->StartIndexLocation = skullRitem->Geo->DrawArgs["skull"].StartIndexLocation;
 	skullRitem->BaseVertexLocation = skullRitem->Geo->DrawArgs["skull"].BaseVertexLocation;
+	XMMATRIX skullRotate = XMMatrixRotationY(0.5f*MathHelper::Pi);
+	XMMATRIX skullScale = XMMatrixScaling(0.45f, 0.45f, 0.45f);
+	XMMATRIX skullOffset = XMMatrixTranslation(0.0f, 1.0f, -5.0f);
+	XMMATRIX skullWorld = skullRotate*skullScale*skullOffset;
+	XMStoreFloat4x4(&skullRitem->World, skullWorld);
 	mRitemLayer[(int)RenderLayer::Opaque].push_back(skullRitem.get());
+
+	auto mirrorRitem = std::make_unique<RenderItem>();
+	mirrorRitem->World = MathHelper::Identity4x4();
+	mirrorRitem->TexTransform = MathHelper::Identity4x4();
+	mirrorRitem->ObjCBIndex = 3;
+	mirrorRitem->Mat = mMaterials["ice"].get();
+	mirrorRitem->Geo = mGeometries["roomGeo"].get();
+	mirrorRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	mirrorRitem->IndexCount = mirrorRitem->Geo->DrawArgs["mirror"].IndexCount;
+	mirrorRitem->StartIndexLocation = mirrorRitem->Geo->DrawArgs["mirror"].StartIndexLocation;
+	mirrorRitem->BaseVertexLocation = mirrorRitem->Geo->DrawArgs["mirror"].BaseVertexLocation;
+	mRitemLayer[(int)RenderLayer::Mirrors].push_back(mirrorRitem.get());
+	mRitemLayer[(int)RenderLayer::Transparent].push_back(mirrorRitem.get());
+
+	auto reflectedSkullRitem = std::make_unique<RenderItem>();
+	*reflectedSkullRitem = *skullRitem;
+	reflectedSkullRitem->ObjCBIndex = 4;
+	mReflectedSkullRitem = reflectedSkullRitem.get();
+	XMVECTOR mirrorPlane = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+	XMMATRIX R = XMMatrixReflect(mirrorPlane);
+	XMStoreFloat4x4(&reflectedSkullRitem->World, skullWorld * R);
+	mRitemLayer[(int)RenderLayer::Reflected].push_back(reflectedSkullRitem.get());
+
 
 	mAllRitems.push_back(std::move(floorRitem));
 	mAllRitems.push_back(std::move(wallsRitem));
 	mAllRitems.push_back(std::move(skullRitem));
+	mAllRitems.push_back(std::move(mirrorRitem));
+	mAllRitems.push_back(std::move(reflectedSkullRitem));
 }
 
 
