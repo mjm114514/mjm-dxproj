@@ -49,6 +49,7 @@ enum class RenderLayer : int{
 	Mirrors,
 	Reflected,
 	Transparent,
+	Shadow,
 	Count
 };
 
@@ -863,12 +864,21 @@ void ShapesApp::BuildMaterials() {
 	checkboard->FresnelR0 = XMFLOAT3(0.07f, 0.07f, 0.07f);
 	checkboard->Roughness = 0.3f;
 	
+	auto shadow = std::make_unique<Material>();
+	shadow->Name = "shadow";
+	shadow->MatCBIndex = 6;
+	shadow->DiffuseSrvHeapIndex = 3;
+	shadow->DiffuseAlbedo = XMFLOAT4(0.0f, 0.0f, 0.0f, 0.5f);
+	shadow->FresnelR0 = XMFLOAT3(0.001f, 0.001f, 0.001f);
+	shadow->Roughness = 0.0f;
+
 	mMaterials["bricks0"] = std::move(bricks0);
 	mMaterials["stone0"] = std::move(stone0);
 	mMaterials["tile0"] = std::move(tile0);
 	mMaterials["skull"] = std::move(skullMat);
 	mMaterials["ice"] = std::move(ice);
 	mMaterials["checkboard"] = std::move(checkboard);
+	mMaterials["shadow"] = std::move(shadow);
 }
 
 void ShapesApp::BuildShapeGeometry()
@@ -1224,6 +1234,7 @@ void ShapesApp::BuildPSOs()
 		&drawReflectionPsoDesc,
 		IID_PPV_ARGS(&mPSOs["drawStencilReflections"])
 	));
+
 }
 
 void ShapesApp::BuildFrameResources()
@@ -1304,12 +1315,24 @@ void ShapesApp::BuildRenderItems() {
 	XMStoreFloat4x4(&reflectedFloorRitem->World, XMMatrixIdentity() * R);
 	mRitemLayer[(int)RenderLayer::Reflected].push_back(reflectedFloorRitem.get());
 
+	auto shadowedSkullRitem = std::make_unique<RenderItem>();
+	*shadowedSkullRitem = *skullRitem;
+	shadowedSkullRitem->ObjCBIndex = 6;
+	XMVECTOR shadowPlane = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+	XMFLOAT3 lightDir = { 0.57735f, -0.57735f, 0.57735f };
+	XMVECTOR toMainLight = -XMLoadFloat3(&lightDir);
+	XMMATRIX S = XMMatrixShadow(shadowPlane, toMainLight);
+	XMMATRIX T = XMMatrixTranslation(0.0f, 0.01f, 0.0f);
+	XMStoreFloat4x4(&shadowedSkullRitem->World, skullWorld * S * T);
+	mRitemLayer[(int)RenderLayer::Transparent].push_back(shadowedSkullRitem.get());
+
 	mAllRitems.push_back(std::move(floorRitem));
 	mAllRitems.push_back(std::move(wallsRitem));
 	mAllRitems.push_back(std::move(skullRitem));
 	mAllRitems.push_back(std::move(mirrorRitem));
 	mAllRitems.push_back(std::move(reflectedSkullRitem));
 	mAllRitems.push_back(std::move(reflectedFloorRitem));
+	mAllRitems.push_back(std::move(shadowedSkullRitem));
 }
 
 
@@ -1331,7 +1354,6 @@ void ShapesApp::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::v
 		CD3DX12_GPU_DESCRIPTOR_HANDLE handle(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 		cmdList->SetGraphicsRootConstantBufferView(0, objectCB->GetGPUVirtualAddress() + ri->ObjCBIndex * objCBByteSize);
 		cmdList->SetGraphicsRootConstantBufferView(2, materialCB->GetGPUVirtualAddress() + ri->Mat->MatCBIndex * matCBByteSize);
-
 
 		handle.Offset(ri->Mat->MatCBIndex * mCbvSrvUavDescriptorSize);
 		cmdList->SetGraphicsRootDescriptorTable(3, handle);
