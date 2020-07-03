@@ -293,6 +293,9 @@ void ShapesApp::Draw(const GameTimer& gt)
 	mCommandList->SetPipelineState(mPSOs["transparent"].Get());
 	DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Transparent]);
 
+	mCommandList->SetPipelineState(mPSOs["shadow"].Get());
+	DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Shadow]);
+
 
     // Indicate a state transition on the resource usage.
 	mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(CurrentBackBuffer(),
@@ -1235,6 +1238,31 @@ void ShapesApp::BuildPSOs()
 		IID_PPV_ARGS(&mPSOs["drawStencilReflections"])
 	));
 
+	D3D12_DEPTH_STENCIL_DESC shadowDSS;
+	shadowDSS.DepthEnable = true;
+	shadowDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	shadowDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+	shadowDSS.StencilEnable = true;
+	shadowDSS.StencilEnable = true;
+	shadowDSS.StencilReadMask = 0xff;
+	shadowDSS.StencilWriteMask = 0xff;
+
+	shadowDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	shadowDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	shadowDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+	shadowDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_INCR;
+
+	shadowDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	shadowDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	shadowDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+	shadowDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_INCR;
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC shadowPsoDesc = transparentPsoDesc;
+	shadowPsoDesc.DepthStencilState = shadowDSS;
+	ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(
+		&shadowPsoDesc,
+		IID_PPV_ARGS(&mPSOs["shadow"])
+	));
 }
 
 void ShapesApp::BuildFrameResources()
@@ -1318,13 +1346,14 @@ void ShapesApp::BuildRenderItems() {
 	auto shadowedSkullRitem = std::make_unique<RenderItem>();
 	*shadowedSkullRitem = *skullRitem;
 	shadowedSkullRitem->ObjCBIndex = 6;
+	shadowedSkullRitem->Mat = mMaterials["shadow"].get();
 	XMVECTOR shadowPlane = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 	XMFLOAT3 lightDir = { 0.57735f, -0.57735f, 0.57735f };
 	XMVECTOR toMainLight = -XMLoadFloat3(&lightDir);
 	XMMATRIX S = XMMatrixShadow(shadowPlane, toMainLight);
 	XMMATRIX T = XMMatrixTranslation(0.0f, 0.01f, 0.0f);
 	XMStoreFloat4x4(&shadowedSkullRitem->World, skullWorld * S * T);
-	mRitemLayer[(int)RenderLayer::Transparent].push_back(shadowedSkullRitem.get());
+	mRitemLayer[(int)RenderLayer::Shadow].push_back(shadowedSkullRitem.get());
 
 	mAllRitems.push_back(std::move(floorRitem));
 	mAllRitems.push_back(std::move(wallsRitem));
@@ -1355,7 +1384,7 @@ void ShapesApp::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::v
 		cmdList->SetGraphicsRootConstantBufferView(0, objectCB->GetGPUVirtualAddress() + ri->ObjCBIndex * objCBByteSize);
 		cmdList->SetGraphicsRootConstantBufferView(2, materialCB->GetGPUVirtualAddress() + ri->Mat->MatCBIndex * matCBByteSize);
 
-		handle.Offset(ri->Mat->MatCBIndex * mCbvSrvUavDescriptorSize);
+		handle.Offset(ri->Mat->DiffuseSrvHeapIndex * mCbvSrvUavDescriptorSize);
 		cmdList->SetGraphicsRootDescriptorTable(3, handle);
 
 		cmdList->IASetVertexBuffers(0, 1, &ri->Geo->VertexBufferView());
