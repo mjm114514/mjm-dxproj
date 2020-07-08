@@ -49,6 +49,11 @@ struct Vertex
     DirectX::XMFLOAT2 TexC;
 };
 
+struct TreeSpriteVertex {
+	DirectX::XMFLOAT3 Pos;
+	DirectX::XMFLOAT2 Size;
+};
+
 // Stores the resources needed for the CPU to build the command lists
 // for a frame.  
 struct FrameResource
