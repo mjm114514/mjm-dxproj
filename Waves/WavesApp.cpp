@@ -4,6 +4,7 @@
 #include "../Common/GeometryGenerator.h"
 #include "FrameResource.h"
 #include "Waves.h"
+#include "GpuWaves.h"
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
@@ -86,6 +87,7 @@ private:
 
     void LoadTextures();
     void BuildRootSignature();
+    void BuildWavesRootSignature();
     void BuildDescriptorHeaps();
     void BuildShadersAndInputLayout();
 	void BuildTreeSpriteGeometry();
@@ -112,6 +114,7 @@ private:
     UINT mCbvSrvDescriptorSize = 0;
 
     ComPtr<ID3D12RootSignature> mRootSignature = nullptr;
+    ComPtr<ID3D12RootSignature> mWavesRootSignature = nullptr;
     ComPtr<ID3D12DescriptorHeap> mSrvDescriptorHeap = nullptr;
 
     std::unordered_map<std::string, std::unique_ptr<MeshGeometry>> mGeometries;
@@ -709,6 +712,12 @@ void WavesApp::BuildShadersAndInputLayout()
         NULL, NULL
     };
 
+	const D3D_SHADER_MACRO waveDefines[] =
+	{
+		"DISPLACEMENT_MAP", "1",
+		NULL, NULL
+	};
+
     mShaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\color.hlsl", nullptr, "VS", "vs_5_0");
     mShaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\color.hlsl", defines, "PS", "ps_5_0");
     mShaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\color.hlsl", alphaTestDefines, "PS", "ps_5_0");
@@ -831,60 +840,96 @@ void WavesApp::BuildBoxGeometry(){
     mGeometries["boxGeo"] = std::move(geo);
 }
 
+void WavesApp::BuildWavesRootSignature(){
+    CD3DX12_DESCRIPTOR_RANGE uavTable0;
+    uavTable0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+
+    CD3DX12_DESCRIPTOR_RANGE uavTable1;
+    uavTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1);
+
+    CD3DX12_DESCRIPTOR_RANGE uavTable2;
+    uavTable2.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 2);
+
+    CD3DX12_ROOT_PARAMETER slotRootParameter[4];
+
+    slotRootParameter[0].InitAsConstants(6, 0);
+    slotRootParameter[1].InitAsDescriptorTable(1, &uavTable0);
+    slotRootParameter[2].InitAsDescriptorTable(2, &uavTable0);
+    slotRootParameter[3].InitAsDescriptorTable(3, &uavTable0);
+
+    CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(
+        4,
+        slotRootParameter,
+        0, nullptr,
+        D3D12_ROOT_SIGNATURE_FLAG_NONE
+    );
+
+    ComPtr<ID3DBlob> serializedRootSig = nullptr;
+    ComPtr<ID3DBlob> errorBlob = nullptr;
+	HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+		serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());
+
+	if(errorBlob != nullptr)
+	{
+		::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+	}
+	ThrowIfFailed(hr);
+
+	ThrowIfFailed(md3dDevice->CreateRootSignature(
+		0,
+		serializedRootSig->GetBufferPointer(),
+		serializedRootSig->GetBufferSize(),
+		IID_PPV_ARGS(mWavesRootSignature.GetAddressOf())));
+
+}
+
 void WavesApp::BuildWavesGeometryBuffers()
 {
-    std::vector<std::uint16_t> indices(3 * mWaves->TriangleCount()); // 3 indices per face
-    assert(mWaves->VertexCount() < 0x0000ffff);
+	GeometryGenerator geoGen;
+	GeometryGenerator::MeshData grid = geoGen.CreateGrid(160.0f, 160.0f, mWaves->RowCount(), mWaves->ColumnCount());
 
-    // Iterate over each quad.
-    int m = mWaves->RowCount();
-    int n = mWaves->ColumnCount();
-    int k = 0;
-    for(int i = 0; i < m - 1; ++i)
-    {
-        for(int j = 0; j < n - 1; ++j)
-        {
-            indices[k] = i*n + j;
-            indices[k + 1] = i*n + j + 1;
-            indices[k + 2] = (i + 1)*n + j;
+	std::vector<Vertex> vertices(grid.Vertices.size());
+	for(size_t i = 0; i < grid.Vertices.size(); ++i)
+	{
+		vertices[i].Pos = grid.Vertices[i].Position;
+		vertices[i].Normal = grid.Vertices[i].Normal;
+		vertices[i].TexC = grid.Vertices[i].TexC;
+	}
 
-            indices[k + 3] = (i + 1)*n + j;
-            indices[k + 4] = i*n + j + 1;
-            indices[k + 5] = (i + 1)*n + j + 1;
+	std::vector<std::uint32_t> indices = grid.Indices32;
 
-            k += 6; // next quad
-        }
-    }
+	UINT vbByteSize = mWaves->VertexCount()*sizeof(Vertex);
+	UINT ibByteSize = (UINT)indices.size()*sizeof(std::uint32_t);
 
-    UINT vbByteSize = mWaves->VertexCount()*sizeof(Vertex);
-    UINT ibByteSize = (UINT)indices.size()*sizeof(std::uint16_t);
+	auto geo = std::make_unique<MeshGeometry>();
+	geo->Name = "waterGeo";
 
-    auto geo = std::make_unique<MeshGeometry>();
-    geo->Name = "waterGeo";
+	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
 
-    // Set dynamically.
-    geo->VertexBufferCPU = nullptr;
-    geo->VertexBufferGPU = nullptr;
+	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
 
-    ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
-    CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),
+		mCommandList.Get(), vertices.data(), vbByteSize, geo->VertexBufferUploader);
 
-    geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),
-        mCommandList.Get(), indices.data(), ibByteSize, geo->IndexBufferUploader);
+	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),
+		mCommandList.Get(), indices.data(), ibByteSize, geo->IndexBufferUploader);
 
-    geo->VertexByteStride = sizeof(Vertex);
-    geo->VertexBufferByteSize = vbByteSize;
-    geo->IndexFormat = DXGI_FORMAT_R16_UINT;
-    geo->IndexBufferByteSize = ibByteSize;
+	geo->VertexByteStride = sizeof(Vertex);
+	geo->VertexBufferByteSize = vbByteSize;
+	geo->IndexFormat = DXGI_FORMAT_R32_UINT;
+	geo->IndexBufferByteSize = ibByteSize;
 
-    SubmeshGeometry submesh;
-    submesh.IndexCount = (UINT)indices.size();
-    submesh.StartIndexLocation = 0;
-    submesh.BaseVertexLocation = 0;
+	SubmeshGeometry submesh;
+	submesh.IndexCount = (UINT)indices.size();
+	submesh.StartIndexLocation = 0;
+	submesh.BaseVertexLocation = 0;
 
-    geo->DrawArgs["grid"] = submesh;
+	geo->DrawArgs["grid"] = submesh;
 
-    mGeometries["waterGeo"] = std::move(geo);
+	mGeometries["waterGeo"] = std::move(geo);
+
 }
 
 void WavesApp::BuildTreeSpriteGeometry() {
@@ -1015,7 +1060,7 @@ void WavesApp::BuildPSOs()
 		mShaders["treeSpritePS"]->GetBufferSize()
 	};
 	treeSpritesPsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT;
-	treeSpritesPsoDesc.InputLayout = { mTreeSpriteInputLayout.data(), mTreeSpriteInputLayout.size() };
+	treeSpritesPsoDesc.InputLayout = { mTreeSpriteInputLayout.data(), (UINT)mTreeSpriteInputLayout.size() };
 	treeSpritesPsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
 
 	ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(
