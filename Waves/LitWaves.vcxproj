@@ -149,6 +149,8 @@
     <ClCompile Include="..\Common\MathHelper.cpp" />
     <ClCompile Include="FrameResource.cpp" />
     <ClCompile Include="GpuWaves.cpp" />
+    <ClCompile Include="RenderTarget.cpp" />
+    <ClCompile Include="SobelFilter.cpp" />
     <ClCompile Include="WavesApp.cpp" />
     <ClCompile Include="Waves.cpp" />
   </ItemGroup>
@@ -164,6 +166,8 @@
     <ClInclude Include="..\Common\UploadBuffer.h" />
     <ClInclude Include="FrameResource.h" />
     <ClInclude Include="GpuWaves.h" />
+    <ClInclude Include="RenderTarget.h" />
+    <ClInclude Include="SobelFilter.h" />
     <ClInclude Include="Waves.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
