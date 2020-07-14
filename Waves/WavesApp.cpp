@@ -28,6 +28,10 @@ struct RenderItem
 
     XMFLOAT4X4 TexTransform = MathHelper::Identity4x4();
 
+	XMFLOAT2 DisplacementMapTexelSize = { 1.0f, 1.0f };
+
+	float GridSpatialStepSize = 1.0f;
+
     // Dirty flag indicating the object data has changed and we need to update the constant buffer.
     // Because we have an object cbuffer for each FrameResource, we have to apply the
     // update to each FrameResource.  Thus, when we modify obect data we should set 
@@ -134,7 +138,7 @@ private:
     // Render items divided by PSO.
     std::vector<RenderItem*> mRitemLayer[(int)RenderLayer::Count];
 
-    std::unique_ptr<Waves> mWaves;
+    std::unique_ptr<GpuWaves> mWaves;
 
     PassConstants mMainPassCB;
 
@@ -198,10 +202,14 @@ bool WavesApp::Initialize()
     // to query this information.
     mCbvSrvDescriptorSize = md3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-    mWaves = std::make_unique<Waves>(128, 128, 1.0f, 0.03f, 4.0f, 0.2f);
+    mWaves = std::make_unique<GpuWaves>(
+		md3dDevice.Get(),
+		mCommandList.Get(),
+		128, 128, 1.0f, 0.03f, 4.0f, 0.2f);
 
     LoadTextures();
     BuildRootSignature();
+	BuildWavesRootSignature();
     BuildShadersAndInputLayout();
     BuildDescriptorHeaps();
     BuildLandGeometry();
@@ -256,7 +264,7 @@ void WavesApp::Update(const GameTimer& gt)
     UpdateObjectCBs(gt);
     UpdateMaterialCBs(gt);
     UpdateMainPassCB(gt);
-    UpdateWaves(gt);
+    // UpdateWaves(gt);
 }
 
 void WavesApp::Draw(const GameTimer& gt)
@@ -271,6 +279,12 @@ void WavesApp::Draw(const GameTimer& gt)
     // Reusing the command list reuses memory.
     ThrowIfFailed(mCommandList->Reset(cmdListAlloc.Get(), mPSOs["opaque"].Get()));
 
+    ID3D12DescriptorHeap* descriptorHeaps[] = { mSrvDescriptorHeap.Get() };
+    mCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+
+	UpdateWaves(gt);
+
+	mCommandList->SetPipelineState(mPSOs["opaque"].Get());
     mCommandList->RSSetViewports(1, &mScreenViewport);
     mCommandList->RSSetScissorRects(1, &mScissorRect);
 
@@ -285,14 +299,13 @@ void WavesApp::Draw(const GameTimer& gt)
     // Specify the buffers we are going to render to.
     mCommandList->OMSetRenderTargets(1, &CurrentBackBufferView(), true, &DepthStencilView());
 
-    ID3D12DescriptorHeap* descriptorHeaps[] = { mSrvDescriptorHeap.Get() };
-    mCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
 
     mCommandList->SetGraphicsRootSignature(mRootSignature.Get());
 
     auto passCB = mCurrFrameResource->PassCB->Resource();
     mCommandList->SetGraphicsRootConstantBufferView(1, passCB->GetGPUVirtualAddress());
 
+	mCommandList->SetGraphicsRootDescriptorTable(4, mWaves->DisplacementMap());
 
     // Draw another layer uses different Pipeline
 
@@ -305,7 +318,7 @@ void WavesApp::Draw(const GameTimer& gt)
     mCommandList->SetPipelineState(mPSOs["alphaTested"].Get());
     DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::AlphaTested]);
 
-    mCommandList->SetPipelineState(mPSOs["transparent"].Get());
+    mCommandList->SetPipelineState(mPSOs["waves"].Get());
     DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::transparent]);
 
 
@@ -414,7 +427,8 @@ void WavesApp::UpdateObjectCBs(const GameTimer& gt)
             XMStoreFloat4x4(&objConstants.World, XMMatrixTranspose(world));
             XMStoreFloat4x4(&objConstants.InvTransWorld, XMMatrixInverse(&XMMatrixDeterminant(world), world));
             XMStoreFloat4x4(&objConstants.TexTransform, XMMatrixTranspose(texTransform));
-
+			objConstants.DisplacementMapTexelSize = e->DisplacementMapTexelSize;
+			objConstants.GridSpatialStep = e->GridSpatialStepSize;
             currObjectCB->CopyData(e->ObjCBIndex, objConstants);
 
             // Next FrameResource need to be updated too.
@@ -502,30 +516,11 @@ void WavesApp::UpdateWaves(const GameTimer& gt)
 
         float r = MathHelper::RandF(0.2f, 0.5f);
 
-        mWaves->Disturb(i, j, r);
+        mWaves->Disturb(mCommandList.Get(), mWavesRootSignature.Get(), mPSOs["wavesDisturb"].Get(), i, j, r);
     }
 
     // Update the wave simulation.
-    mWaves->Update(gt.DeltaTime());
-
-    // Update the wave vertex buffer with the new solution.
-    auto currWavesVB = mCurrFrameResource->WavesVB.get();
-    for(int i = 0; i < mWaves->VertexCount(); ++i)
-    {
-        Vertex v;
-
-        v.Pos = mWaves->Position(i);
-        v.Normal = mWaves->Normal(i);
-
-        // derive tex-coords from position by mapping [-w/2, w/2] => [0, 1]
-        v.TexC.x = 0.5f + v.Pos.x / mWaves->Width();
-        v.TexC.y = 0.5f - v.Pos.z / mWaves->Depth();
-
-        currWavesVB->CopyData(i, v);
-    }
-
-    // Set the dynamic VB of the wave renderitem to the current frame VB.
-    mWavesRitem->Geo->VertexBufferGPU = currWavesVB->Resource();
+    mWaves->Update(gt, mCommandList.Get(), mWavesRootSignature.Get(), mPSOs["wavesUpdate"].Get());
 }
 
 void WavesApp::AnimateMaterials(const GameTimer &gt){
@@ -608,20 +603,24 @@ void WavesApp::BuildRootSignature()
 {
     CD3DX12_DESCRIPTOR_RANGE texTable;
     texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+
+	CD3DX12_DESCRIPTOR_RANGE displacementMapTable;
+	displacementMapTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
     // Root parameter can be a table, root descriptor or root constants.
-    CD3DX12_ROOT_PARAMETER slotRootParameter[4];
+    CD3DX12_ROOT_PARAMETER slotRootParameter[5];
 
     // Create root CBV.
     slotRootParameter[0].InitAsConstantBufferView(0);
     slotRootParameter[1].InitAsConstantBufferView(1);
     slotRootParameter[2].InitAsConstantBufferView(2);
     slotRootParameter[3].InitAsDescriptorTable(1, &texTable, D3D12_SHADER_VISIBILITY_PIXEL);
+	slotRootParameter[4].InitAsDescriptorTable(1, &displacementMapTable, D3D12_SHADER_VISIBILITY_ALL);
 
     auto staticSampler = GetStaticSamplers();
 
     // A root signature is an array of root parameters.
     CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(
-        4,
+        5,
         slotRootParameter,
         (UINT)staticSampler.size(),
         staticSampler.data(),
@@ -652,7 +651,7 @@ void WavesApp::BuildDescriptorHeaps(){
 
     if(mTextures.size() > 0){
         D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-        srvHeapDesc.NumDescriptors = (UINT)mTextures.size();
+        srvHeapDesc.NumDescriptors = (UINT)mTextures.size() + mWaves->DescriptorCount();
         srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         ThrowIfFailed(md3dDevice->CreateDescriptorHeap(
@@ -663,6 +662,7 @@ void WavesApp::BuildDescriptorHeaps(){
 
     // Fill out the heap with actual descriptor
     CD3DX12_CPU_DESCRIPTOR_HANDLE handle(mSrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+	CD3DX12_GPU_DESCRIPTOR_HANDLE gHandle(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
     auto grassTex = mTextures["grass"]->Resource;
     auto waterTex = mTextures["water"]->Resource;
@@ -679,16 +679,19 @@ void WavesApp::BuildDescriptorHeaps(){
 
     // next descriptor
     handle.Offset(1, mCbvSrvDescriptorSize);
+	gHandle.Offset(1, mCbvSrvDescriptorSize);
     srvDesc.Format = waterTex->GetDesc().Format;
     md3dDevice->CreateShaderResourceView(waterTex.Get(), &srvDesc, handle);
 
     // next descriptor
     handle.Offset(1, mCbvSrvDescriptorSize);
+	gHandle.Offset(1, mCbvSrvDescriptorSize);
     srvDesc.Format = fenceTex->GetDesc().Format;
     md3dDevice->CreateShaderResourceView(fenceTex.Get(), &srvDesc, handle);
 
     // next descriptor
     handle.Offset(1, mCbvSrvDescriptorSize);
+	gHandle.Offset(1, mCbvSrvDescriptorSize);
     srvDesc.Format = treeSpriteTex->GetDesc().Format;
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
 	srvDesc.Texture2DArray.MipLevels = -1;
@@ -696,6 +699,15 @@ void WavesApp::BuildDescriptorHeaps(){
 	srvDesc.Texture2DArray.FirstArraySlice = 0;
 	srvDesc.Texture2DArray.ArraySize = treeSpriteTex->GetDesc().DepthOrArraySize;
     md3dDevice->CreateShaderResourceView(treeSpriteTex.Get(), &srvDesc, handle);
+
+
+    handle.Offset(1, mCbvSrvDescriptorSize);
+	gHandle.Offset(1, mCbvSrvDescriptorSize);
+	mWaves->BuildDescriptors(
+		handle,
+		gHandle,
+		mCbvSrvDescriptorSize
+	);
 }
 
 void WavesApp::BuildShadersAndInputLayout()
@@ -725,6 +737,10 @@ void WavesApp::BuildShadersAndInputLayout()
 	mShaders["treeSpriteVS"] = d3dUtil::CompileShader(L"Shaders\\TreeSprite.hlsl", nullptr, "VS", "vs_5_0");
 	mShaders["treeSpriteGS"] = d3dUtil::CompileShader(L"Shaders\\TreeSprite.hlsl", nullptr, "GS", "gs_5_0");
 	mShaders["treeSpritePS"] = d3dUtil::CompileShader(L"Shaders\\TreeSprite.hlsl", alphaTestDefines, "PS", "ps_5_0");
+
+	mShaders["wavesVS"] = d3dUtil::CompileShader(L"Shaders\\color.hlsl", waveDefines, "VS", "vs_5_0");
+	mShaders["wavesUpdateCS"] = d3dUtil::CompileShader(L"Shaders\\WaveSim.hlsl", nullptr, "UpdateWavesCS", "cs_5_0");
+	mShaders["wavesDisturbCS"] = d3dUtil::CompileShader(L"Shaders\\WaveSim.hlsl", nullptr, "DisturbWavesCS", "cs_5_0");
 
     mInputLayout =
     {
@@ -854,8 +870,8 @@ void WavesApp::BuildWavesRootSignature(){
 
     slotRootParameter[0].InitAsConstants(6, 0);
     slotRootParameter[1].InitAsDescriptorTable(1, &uavTable0);
-    slotRootParameter[2].InitAsDescriptorTable(2, &uavTable0);
-    slotRootParameter[3].InitAsDescriptorTable(3, &uavTable0);
+    slotRootParameter[2].InitAsDescriptorTable(1, &uavTable1);
+    slotRootParameter[3].InitAsDescriptorTable(1, &uavTable2);
 
     CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(
         4,
@@ -880,7 +896,6 @@ void WavesApp::BuildWavesRootSignature(){
 		serializedRootSig->GetBufferPointer(),
 		serializedRootSig->GetBufferSize(),
 		IID_PPV_ARGS(mWavesRootSignature.GetAddressOf())));
-
 }
 
 void WavesApp::BuildWavesGeometryBuffers()
@@ -929,7 +944,6 @@ void WavesApp::BuildWavesGeometryBuffers()
 	geo->DrawArgs["grid"] = submesh;
 
 	mGeometries["waterGeo"] = std::move(geo);
-
 }
 
 void WavesApp::BuildTreeSpriteGeometry() {
@@ -1044,6 +1058,16 @@ void WavesApp::BuildPSOs()
 
     ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&transparencyBlendPsoDesc, IID_PPV_ARGS(&mPSOs["transparent"])));
 
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC wavesPsoDesc = transparencyBlendPsoDesc;
+	wavesPsoDesc.VS = {
+		reinterpret_cast<BYTE*>(mShaders["wavesVS"]->GetBufferPointer()),
+		mShaders["wavesVS"]->GetBufferSize()
+	};
+	ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(
+		&wavesPsoDesc,
+		IID_PPV_ARGS(&mPSOs["waves"])
+	));
+
 	// PSO for tree sprites
 
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC treeSpritesPsoDesc = opaquePsoDesc;
@@ -1066,6 +1090,28 @@ void WavesApp::BuildPSOs()
 	ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(
 		&treeSpritesPsoDesc,
 		IID_PPV_ARGS(&mPSOs["treeSprites"])
+	));
+
+	D3D12_COMPUTE_PIPELINE_STATE_DESC wavesDisturbPso = {};
+	wavesDisturbPso.pRootSignature = mWavesRootSignature.Get();
+	wavesDisturbPso.CS = {
+		reinterpret_cast<BYTE*>(mShaders["wavesDisturbCS"]->GetBufferPointer()),
+		mShaders["wavesDisturbCS"]->GetBufferSize()
+	};
+	wavesDisturbPso.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
+	ThrowIfFailed(md3dDevice->CreateComputePipelineState(
+		&wavesDisturbPso,
+		IID_PPV_ARGS(&mPSOs["wavesDisturb"])
+	));
+
+	D3D12_COMPUTE_PIPELINE_STATE_DESC wavesUpdatePso = wavesDisturbPso;
+	wavesUpdatePso.CS = {
+		reinterpret_cast<BYTE*>(mShaders["wavesUpdateCS"]->GetBufferPointer()),
+		mShaders["wavesUpdateCS"]->GetBufferSize()
+	};
+	ThrowIfFailed(md3dDevice->CreateComputePipelineState(
+		&wavesUpdatePso,
+		IID_PPV_ARGS(&mPSOs["wavesUpdate"])
 	));
 }
 
@@ -1178,6 +1224,8 @@ void WavesApp::BuildRenderItems()
     wavesRitem->ObjCBIndex = 0;
     wavesRitem->Mat = mMaterials["water"].get();
     wavesRitem->Geo = mGeometries["waterGeo"].get();
+	wavesRitem->DisplacementMapTexelSize = { 1.0f / mWaves->ColumnCount(), 1.0f / mWaves->RowCount() };
+	wavesRitem->GridSpatialStepSize = mWaves->SpatialStep();
     XMStoreFloat4x4(&wavesRitem->TexTransform, XMMatrixScaling(5.0, 5.0, 1.0));
     wavesRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
     wavesRitem->IndexCount = wavesRitem->Geo->DrawArgs["grid"].IndexCount;

@@ -9,7 +9,7 @@ public:
     GpuWaves(ID3D12Device *device, ID3D12GraphicsCommandList *cmdList, int m, int n, float dx, float dt, float speed, float damping);
     GpuWaves(const GpuWaves &rhs) = delete;
     GpuWaves &operator=(const GpuWaves &rhs) = delete;
-    ~GpuWaves();
+    ~GpuWaves() = default;
 
     UINT RowCount() const;
     UINT ColumnCount() const;
