@@ -43,6 +43,7 @@ private:
     void BuildRootSignature();
     void BuildShadersAndInputLayout();
     void BuildQuadPatchGeometry();
+    void BuildBezierQuadPatchGeometry();
     void BuildPSO();
 
 private:
@@ -52,7 +53,7 @@ private:
 
     std::unique_ptr<UploadBuffer<ObjectConstants>> mObjectCB = nullptr;
 
-	std::unique_ptr<MeshGeometry> mGeo = nullptr;
+    std::unordered_map<std::string, std::unique_ptr<MeshGeometry>> mGeometry;
 
     std::unordered_map<std::string, ComPtr<ID3DBlob>> mShaders;
 
@@ -116,6 +117,7 @@ bool BasicTess::Initialize()
     BuildRootSignature();
     BuildShadersAndInputLayout();
     BuildQuadPatchGeometry();
+    BuildBezierQuadPatchGeometry();
     BuildPSO();
 
     // Execute the initialization commands.
@@ -194,14 +196,14 @@ void BasicTess::Draw(const GameTimer& gt)
 
 	mCommandList->SetGraphicsRootSignature(mRootSignature.Get());
 
-	mCommandList->IASetVertexBuffers(0, 1, &mGeo->VertexBufferView());
-	mCommandList->IASetIndexBuffer(&mGeo->IndexBufferView());
-    mCommandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST);
+	mCommandList->IASetVertexBuffers(0, 1, &mGeometry["BezierQuadPatch"]->VertexBufferView());
+	mCommandList->IASetIndexBuffer(&mGeometry["BezierQuadPatch"]->IndexBufferView());
+    mCommandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_16_CONTROL_POINT_PATCHLIST);
     
     mCommandList->SetGraphicsRootDescriptorTable(0, mCbvHeap->GetGPUDescriptorHandleForHeapStart());
 
     mCommandList->DrawIndexedInstanced(
-		mGeo->DrawArgs["quadpatch"].IndexCount, 
+		mGeometry["BezierQuadPatch"]->DrawArgs["BezierQuadPatch"].IndexCount, 
 		1, 0, 0, 0);
 	
     // Indicate a state transition on the resource usage.
@@ -396,7 +398,80 @@ void BasicTess::BuildQuadPatchGeometry()
 
     geo->DrawArgs["quadpatch"] = quadSubmesh;
 
-    mGeo = std::move(geo);
+    mGeometry["quadpatch"] = std::move(geo);
+}
+
+void BasicTess::BuildBezierQuadPatchGeometry(){
+    std::array<XMFLOAT3, 16> vertices = {
+        // Row 0
+        XMFLOAT3(-10.0f, -10.0f, 15.0f),
+        XMFLOAT3(-5.0f, 0.0f, 15.0f),
+        XMFLOAT3(+5.0f, 0.0f, 15.0f),
+        XMFLOAT3(+10.0f, 0.0f, 15.0f),
+        // Row 1
+        XMFLOAT3(-15.0f, 0.0f, 5.0f),
+        XMFLOAT3(-5.0f, 0.0f, 5.0f),
+        XMFLOAT3(5.0f, 20.0f, 5.0f),
+        XMFLOAT3(15.0f, 0.0f, 5.0f),
+        // Row 2
+        XMFLOAT3(-15.0f, 0.0f, -5.0f),
+        XMFLOAT3(-5.0f, 0.0f, -5.0f),
+        XMFLOAT3(+5.0f, 0.0f, -5.0f),
+        XMFLOAT3(15.0f, 0.0f, -5.0f),
+        // Row 3
+        XMFLOAT3(-10.0f, 10.0f, -15.0f),
+        XMFLOAT3(-5.0f, 0.0f, -15.0f),
+        XMFLOAT3(+5.0f, 0.0f, -15.0f),
+        XMFLOAT3(25.0f, 10.0f, -15.0f),
+    };
+
+    std::array<std::uint16_t, 16> indices = {
+        0, 1, 2, 3,
+        4, 5, 6, 7,
+        8, 9, 10, 11,
+        12, 13, 14, 15
+    };
+
+    const UINT vbByteSize = (UINT)vertices.size() * sizeof(XMFLOAT3);
+    const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+
+    auto geo = std::make_unique<MeshGeometry>();
+    geo->Name = "BezierQuadPatch";
+
+    ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+    CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+    ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+    CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+    
+    geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
+        md3dDevice.Get(),
+        mCommandList.Get(),
+        vertices.data(),
+        vbByteSize,
+        geo->VertexBufferUploader
+    );
+
+    geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
+        md3dDevice.Get(),
+        mCommandList.Get(),
+        indices.data(),
+        ibByteSize,
+        geo->IndexBufferUploader
+    );
+
+    geo->VertexByteStride = sizeof(XMFLOAT3);
+    geo->VertexBufferByteSize = vbByteSize;
+    geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+    geo->IndexBufferByteSize = ibByteSize;
+
+    SubmeshGeometry submesh;
+    submesh.IndexCount = indices.size();
+    submesh.StartIndexLocation = 0;
+    submesh.BaseVertexLocation = 0;
+
+    geo->DrawArgs["BezierQuadPatch"] = submesh;
+
+    mGeometry["BezierQuadPatch"] = std::move(geo);
 }
 
 void BasicTess::BuildPSO()
@@ -425,6 +500,7 @@ void BasicTess::BuildPSO()
     };
     psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
     psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
     psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
     psoDesc.SampleMask = UINT_MAX;
