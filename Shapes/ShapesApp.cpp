@@ -2,6 +2,7 @@
 #include "../Common/MathHelper.h"
 #include "../Common/UploadBuffer.h"
 #include "../Common/GeometryGenerator.h"
+#include "../Common/Camera.h"
 #include "FrameResource.h"
 
 using Microsoft::WRL::ComPtr;
@@ -37,6 +38,10 @@ struct RenderItem
 
     // Primitive topology.
     D3D12_PRIMITIVE_TOPOLOGY PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+
+	std::vector<ObjectConstants> instances;
+
+	BoundingBox bounds;
 
     // DrawIndexedInstanced parameters.
     UINT IndexCount = 0;
@@ -131,9 +136,10 @@ private:
 	XMFLOAT4X4 mView = MathHelper::Identity4x4();
 	XMFLOAT4X4 mProj = MathHelper::Identity4x4();
 
-    float mTheta = 1.5f*XM_PI;
-    float mPhi = 0.2f*XM_PI;
-    float mRadius = 15.0f;
+	Camera mCam;
+
+	BoundingFrustum mCamFrustrum;
+	boolean mFrustumCullingEnabled = false;
 
     POINT mLastMousePos;
 };
@@ -207,15 +213,14 @@ void ShapesApp::OnResize()
 {
     D3DApp::OnResize();
 
-    // The window resized, so update the aspect ratio and recompute the projection matrix.
-    XMMATRIX P = XMMatrixPerspectiveFovLH(0.25f*MathHelper::Pi, AspectRatio(), 1.0f, 1000.0f);
-    XMStoreFloat4x4(&mProj, P);
+	mCam.SetLens(0.25 * MathHelper::Pi, AspectRatio(), 1.0f, 1000.0f);
+
+	BoundingFrustum::CreateFromMatrix(mCamFrustrum, mCam.GetProj());
 }
 
 void ShapesApp::Update(const GameTimer& gt)
 {
     OnKeyboardInput(gt);
-	UpdateCamera(gt);
 
     // Cycle through the circular frame resource array.
     mCurrFrameResourceIndex = (mCurrFrameResourceIndex + 1) % gNumFrameResources;
@@ -342,75 +347,59 @@ void ShapesApp::OnMouseMove(WPARAM btnState, int x, int y)
         float dx = XMConvertToRadians(0.25f*static_cast<float>(x - mLastMousePos.x));
         float dy = XMConvertToRadians(0.25f*static_cast<float>(y - mLastMousePos.y));
 
-        // Update angles based on input to orbit camera around box.
-        mTheta -= dx;
-        mPhi -= dy;
-
-        // Restrict the angle mPhi.
-        mPhi = MathHelper::Clamp(mPhi, 0.1f, MathHelper::Pi - 0.1f);
+		mCam.Pitch(dy);
+		mCam.RotateY(dx);
     }
-    else if((btnState & MK_RBUTTON) != 0)
-    {
-        // Make each pixel correspond to 0.2 unit in the scene.
-        float dx = 0.05f*static_cast<float>(x - mLastMousePos.x);
-        float dy = 0.05f*static_cast<float>(y - mLastMousePos.y);
-
-        // Update the camera radius based on input.
-        mRadius += dx - dy;
-
-        // Restrict the radius.
-        mRadius = MathHelper::Clamp(mRadius, 5.0f, 150.0f);
-    }
-
     mLastMousePos.x = x;
     mLastMousePos.y = y;
 }
  
 void ShapesApp::OnKeyboardInput(const GameTimer& gt)
 {
+	float dt = gt.DeltaTime();
+	if (GetAsyncKeyState('W') & 0x8000) {
+		mCam.Walk(20 * dt);
+	}
+	if (GetAsyncKeyState('S') & 0x8000) {
+		mCam.Walk(-20 * dt);
+	}
+	if (GetAsyncKeyState('A') & 0x8000) {
+		mCam.Strafe(20 * dt);
+	}
+	if (GetAsyncKeyState('D') & 0x8000) {
+		mCam.Strafe(-20 * dt);
+	}
     if(GetAsyncKeyState('1') & 0x8000)
         mIsWireframe = true;
     else
         mIsWireframe = false;
-}
- 
-void ShapesApp::UpdateCamera(const GameTimer& gt)
-{
-	// Convert Spherical to Cartesian coordinates.
-	mEyePos.x = mRadius*sinf(mPhi)*cosf(mTheta);
-	mEyePos.z = mRadius*sinf(mPhi)*sinf(mTheta);
-	mEyePos.y = mRadius*cosf(mPhi);
-
-	// Build the view matrix.
-	XMVECTOR pos = XMVectorSet(mEyePos.x, mEyePos.y, mEyePos.z, 1.0f);
-	XMVECTOR target = XMVectorZero();
-	XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-
-	XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
-	XMStoreFloat4x4(&mView, view);
+	mCam.UpdateViewMatrix();
 }
 
 void ShapesApp::UpdateObjectCBs(const GameTimer& gt)
 {
-	auto currObjectCB = mCurrFrameResource->ObjectCB.get();
+	XMMATRIX view = mCam.GetView();
+	XMMATRIX invView = XMMatrixInverse(&XMMatrixDeterminant(view), view);
+
+	auto currInstanceBuffer = mCurrFrameResource->ObjectCB.get();
 	for(auto& e : mAllRitems)
 	{
-		// Only update the cbuffer data if the constants have changed.  
-		// This needs to be tracked per frame resource.
-		if(e->NumFramesDirty > 0)
-		{
-			XMMATRIX world = XMLoadFloat4x4(&e->World);
-			XMMATRIX invWorld = XMMatrixInverse(&XMMatrixDeterminant(world), world);
-			XMMATRIX texTransform = XMLoadFloat4x4(&e->TexTransform);
 
-			ObjectConstants objConstants;
-			XMStoreFloat4x4(&objConstants.World, XMMatrixTranspose(world));
-			XMStoreFloat4x4(&objConstants.InvWorld, invWorld);
-			XMStoreFloat4x4(&objConstants.TexTransform, XMMatrixTranspose(texTransform));
-			currObjectCB->CopyData(e->ObjCBIndex, objConstants);
+		const auto& instanceData = e->instances;
+		int visibleInstanceCount = 0;
 
-			// Next FrameResource need to be updated too.
-			e->NumFramesDirty--;
+		for (UINT i = 0; i < ( UINT )instanceData.size(); i++) {
+			XMMATRIX world = XMLoadFloat4x4(&instanceData[i].World);
+			XMMATRIX texTransform = XMLoadFloat4x4(&instanceData[i].TexTransform);
+			XMMATRIX invWorld = XMLoadFloat4x4(&instanceData[i].InvWorld);
+
+			XMMATRIX viewToLocal = XMMatrixMultiply(invView, invWorld);
+
+			BoundingFrustum localSpaceFrustrum;
+			mCamFrustrum.Transform(localSpaceFrustrum, viewToLocal);
+
+			if ((localSpaceFrustrum.Contains(e->bounds) != DirectX::DISJOINT) || (!mFrustumCullingEnabled)) {
+			}
 		}
 	}
 }
@@ -434,8 +423,8 @@ void ShapesApp::UpdateMaterialCB(const GameTimer& gt) {
 
 void ShapesApp::UpdateMainPassCB(const GameTimer& gt)
 {
-	XMMATRIX view = XMLoadFloat4x4(&mView);
-	XMMATRIX proj = XMLoadFloat4x4(&mProj);
+	XMMATRIX view = mCam.GetView();
+	XMMATRIX proj = mCam.GetProj();
 
 	XMMATRIX viewProj = XMMatrixMultiply(view, proj);
 	XMMATRIX invView = XMMatrixInverse(&XMMatrixDeterminant(view), view);
@@ -764,7 +753,16 @@ void ShapesApp::BuildSkull() {
 		fin >> vertices[i].Normal.x >> vertices[i].Normal.y >> vertices[i].Normal.z;
 
 		vertices[i].TexC = { 0.0f, 0.0f };
+
+		XMVECTOR P = XMLoadFloat3(&vertices[i].Pos);
+
+		vMin = XMVectorMin(P, vMin);
+		vMax = XMVectorMax(P, vMax);
     }
+
+	BoundingBox bounds;
+	XMStoreFloat3(&bounds.Center, 0.5f * (vMax + vMin));
+	XMStoreFloat3(&bounds.Extents, 0.5f * (vMax - vMin));
 
     fin >> ignore;
     fin >> ignore;
@@ -813,6 +811,7 @@ void ShapesApp::BuildSkull() {
 	submesh.IndexCount = (UINT)indices.size();
 	submesh.StartIndexLocation = 0;
 	submesh.BaseVertexLocation = 0;
+	submesh.Bounds = bounds;
 	geo->DrawArgs["skull"] = submesh;
 
 	mGeometries[geo->Name] = std::move(geo);
@@ -1275,30 +1274,6 @@ void ShapesApp::BuildFrameResources()
 }
 
 void ShapesApp::BuildRenderItems() {
-	auto floorRitem = std::make_unique<RenderItem>();
-	floorRitem->World = MathHelper::Identity4x4();
-	floorRitem->TexTransform = MathHelper::Identity4x4();
-	floorRitem->ObjCBIndex = 0;
-	floorRitem->Mat = mMaterials["checkboard"].get();
-	floorRitem->Geo = mGeometries["roomGeo"].get();
-	floorRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	floorRitem->IndexCount = floorRitem->Geo->DrawArgs["floor"].IndexCount;
-	floorRitem->StartIndexLocation = floorRitem->Geo->DrawArgs["floor"].StartIndexLocation;
-	floorRitem->BaseVertexLocation = floorRitem->Geo->DrawArgs["floor"].BaseVertexLocation;
-	mRitemLayer[(int)RenderLayer::Opaque].push_back(floorRitem.get());
-
-	auto wallsRitem = std::make_unique<RenderItem>();
-	wallsRitem->World = MathHelper::Identity4x4();
-	wallsRitem->TexTransform = MathHelper::Identity4x4();
-	wallsRitem->ObjCBIndex = 1;
-	wallsRitem->Mat = mMaterials["bricks0"].get();
-	wallsRitem->Geo = mGeometries["roomGeo"].get();
-	wallsRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	wallsRitem->IndexCount = wallsRitem->Geo->DrawArgs["wall"].IndexCount;
-	wallsRitem->StartIndexLocation = wallsRitem->Geo->DrawArgs["wall"].StartIndexLocation;
-	wallsRitem->BaseVertexLocation = wallsRitem->Geo->DrawArgs["wall"].BaseVertexLocation;
-	mRitemLayer[(int)RenderLayer::Opaque].push_back(wallsRitem.get());
-
 	auto skullRitem = std::make_unique<RenderItem>();
 	skullRitem->World = MathHelper::Identity4x4();
 	skullRitem->TexTransform = MathHelper::Identity4x4();
@@ -1314,54 +1289,46 @@ void ShapesApp::BuildRenderItems() {
 	XMMATRIX skullOffset = XMMatrixTranslation(0.0f, 1.0f, -5.0f);
 	XMMATRIX skullWorld = skullRotate*skullScale*skullOffset;
 	XMStoreFloat4x4(&skullRitem->World, skullWorld);
-	mRitemLayer[(int)RenderLayer::Opaque].push_back(skullRitem.get());
+	skullRitem->bounds = skullRitem->Geo->DrawArgs["skull"].Bounds;
 
-	auto mirrorRitem = std::make_unique<RenderItem>();
-	mirrorRitem->World = MathHelper::Identity4x4();
-	mirrorRitem->TexTransform = MathHelper::Identity4x4();
-	mirrorRitem->ObjCBIndex = 3;
-	mirrorRitem->Mat = mMaterials["ice"].get();
-	mirrorRitem->Geo = mGeometries["roomGeo"].get();
-	mirrorRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	mirrorRitem->IndexCount = mirrorRitem->Geo->DrawArgs["mirror"].IndexCount;
-	mirrorRitem->StartIndexLocation = mirrorRitem->Geo->DrawArgs["mirror"].StartIndexLocation;
-	mirrorRitem->BaseVertexLocation = mirrorRitem->Geo->DrawArgs["mirror"].BaseVertexLocation;
-	mRitemLayer[(int)RenderLayer::Mirrors].push_back(mirrorRitem.get());
-	mRitemLayer[(int)RenderLayer::Transparent].push_back(mirrorRitem.get());
 
-	auto reflectedSkullRitem = std::make_unique<RenderItem>();
-	*reflectedSkullRitem = *skullRitem;
-	reflectedSkullRitem->ObjCBIndex = 4;
-	XMVECTOR mirrorPlane = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
-	XMMATRIX R = XMMatrixReflect(mirrorPlane);
-	XMStoreFloat4x4(&reflectedSkullRitem->World, skullWorld * R);
-	mRitemLayer[(int)RenderLayer::Reflected].push_back(reflectedSkullRitem.get());
+	// Generate instance data.
+	const int n = 5;
+	int instanceCount = n*n*n;
+	skullRitem->instances.resize(instanceCount);
 
-	auto reflectedFloorRitem = std::make_unique<RenderItem>();
-	*reflectedFloorRitem = *floorRitem;
-	reflectedFloorRitem->ObjCBIndex = 5;
-	XMStoreFloat4x4(&reflectedFloorRitem->World, XMMatrixIdentity() * R);
-	mRitemLayer[(int)RenderLayer::Reflected].push_back(reflectedFloorRitem.get());
 
-	auto shadowedSkullRitem = std::make_unique<RenderItem>();
-	*shadowedSkullRitem = *skullRitem;
-	shadowedSkullRitem->ObjCBIndex = 6;
-	shadowedSkullRitem->Mat = mMaterials["shadow"].get();
-	XMVECTOR shadowPlane = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-	XMFLOAT3 lightDir = { 0.57735f, -0.57735f, 0.57735f };
-	XMVECTOR toMainLight = -XMLoadFloat3(&lightDir);
-	XMMATRIX S = XMMatrixShadow(shadowPlane, toMainLight);
-	XMMATRIX T = XMMatrixTranslation(0.0f, 0.01f, 0.0f);
-	XMStoreFloat4x4(&shadowedSkullRitem->World, skullWorld * S * T);
-	mRitemLayer[(int)RenderLayer::Shadow].push_back(shadowedSkullRitem.get());
+	float width = 200.0f;
+	float height = 200.0f;
+	float depth = 200.0f;
 
-	mAllRitems.push_back(std::move(floorRitem));
-	mAllRitems.push_back(std::move(wallsRitem));
+	float x = -0.5f*width;
+	float y = -0.5f*height;
+	float z = -0.5f*depth;
+	float dx = width / (n - 1);
+	float dy = height / (n - 1);
+	float dz = depth / (n - 1);
+	for(int k = 0; k < n; ++k)
+	{
+		for(int i = 0; i < n; ++i)
+		{
+			for(int j = 0; j < n; ++j)
+			{
+				int index = k*n*n + i*n + j;
+				// Position instanced along a 3D grid.
+				skullRitem->instances[index].World = XMFLOAT4X4(
+					1.0f, 0.0f, 0.0f, 0.0f,
+					0.0f, 1.0f, 0.0f, 0.0f,
+					0.0f, 0.0f, 1.0f, 0.0f,
+					x + j*dx, y + i*dy, z + k*dz, 1.0f);
+
+				XMStoreFloat4x4(&skullRitem->instances[index].TexTransform, XMMatrixScaling(2.0f, 2.0f, 1.0f));
+			}
+		}
+	}
+
 	mAllRitems.push_back(std::move(skullRitem));
-	mAllRitems.push_back(std::move(mirrorRitem));
-	mAllRitems.push_back(std::move(reflectedSkullRitem));
-	mAllRitems.push_back(std::move(reflectedFloorRitem));
-	mAllRitems.push_back(std::move(shadowedSkullRitem));
+	mRitemLayer[(int)RenderLayer::Opaque].push_back(skullRitem.get());
 }
 
 
