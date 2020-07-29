@@ -23,13 +23,6 @@ SamplerState gsamAnisotropicClamp : register(s5);
 
 struct InstanceData
 {
-	float4x4 gWorld; 
-    float4x4 gInvTransWorld;
-    float4x4 gTexTransform;
-};
-
-cbuffer cbPerObject : register(b0)
-{
 	float4x4 World; 
     float4x4 InvTransWorld;
     float4x4 TexTransform;
@@ -37,7 +30,7 @@ cbuffer cbPerObject : register(b0)
 
 StructuredBuffer<InstanceData> gInstanceData : register(t0, space1);
 
-cbuffer cbPass : register(b1)
+cbuffer cbPass : register(b0)
 {
     float4x4 gView;
     float4x4 gInvView;
@@ -63,7 +56,7 @@ cbuffer cbPass : register(b1)
     Light gLights[MaxLights];
 };
 
-cbuffer Material : register(b2)
+cbuffer Material : register(b1)
 {
     float4 gDiffuseAlbedo;
     float3 gFrensnelR0;
@@ -90,21 +83,20 @@ struct VertexOut
 VertexOut VS(VertexIn vin, uint instanceID : SV_InstanceID)
 {
 	VertexOut vout;
-
-    InstanceData instData = gInstanceData[instanceID];
 	
+    InstanceData inst = gInstanceData[instanceID];
 	// Transform to homogeneous clip space.
-    float4 posW = mul(float4(vin.PosL, 1.0f), instData.gWorld);
+    float4 posW = mul(float4(vin.PosL, 1.0f), inst.World);
 
     vout.PosW = posW.xyz;
 
-    vout.NormalW = mul(float4(vin.NormalL, 0.0f), instData.gInvTransWorld).xyz;
+    vout.NormalW = mul(float4(vin.NormalL, 0.0f), inst.InvTransWorld).xyz;
 
     vout.PosH = mul(posW, gViewProj);
 
     float4 TexC = mul(float4(vin.TexC, 0.0f, 1.0f), gMatTransform);
 
-    vout.TexC = mul(TexC, instData.gTexTransform).xy;
+    vout.TexC = mul(TexC, inst.TexTransform).xy;
     
     return vout;
 }

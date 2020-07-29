@@ -43,6 +43,8 @@ struct RenderItem
 
 	BoundingBox bounds;
 
+	UINT instanceCount = 0;
+
     // DrawIndexedInstanced parameters.
     UINT IndexCount = 0;
     UINT StartIndexLocation = 0;
@@ -138,8 +140,9 @@ private:
 
 	Camera mCam;
 
-	BoundingFrustum mCamFrustrum;
+	BoundingFrustum mCamFrustum;
 	boolean mFrustumCullingEnabled = false;
+	UINT mInstanceCount = 0;
 
     POINT mLastMousePos;
 };
@@ -186,16 +189,19 @@ bool ShapesApp::Initialize()
     // Reset the command list to prep for initialization commands.
     ThrowIfFailed(mCommandList->Reset(mDirectCmdListAlloc.Get(), nullptr));
 
+	mCbvSrvUavDescriptorSize = md3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+	mCam.SetPosition(0.0f, 2.0f, -15.0f);
+
+	LoadTextures();
+    BuildDescriptorHeaps();
+	BuildShaderResourceBufferViews();
     BuildRootSignature();
     BuildShadersAndInputLayout();
 	BuildSkull();
-	BuildRoomGeometry();
-	LoadTextures();
 	BuildMaterials();
 	BuildRenderItems();
     BuildFrameResources();
-    BuildDescriptorHeaps();
-	BuildShaderResourceBufferViews();
     BuildPSOs();
 
     // Execute the initialization commands.
@@ -213,9 +219,9 @@ void ShapesApp::OnResize()
 {
     D3DApp::OnResize();
 
-	mCam.SetLens(0.25 * MathHelper::Pi, AspectRatio(), 1.0f, 1000.0f);
+	mCam.SetLens(0.25f * MathHelper::Pi, AspectRatio(), 1.0f, 1000.0f);
 
-	BoundingFrustum::CreateFromMatrix(mCamFrustrum, mCam.GetProj());
+	BoundingFrustum::CreateFromMatrix(mCamFrustum, mCam.GetProj());
 }
 
 void ShapesApp::Update(const GameTimer& gt)
@@ -237,9 +243,8 @@ void ShapesApp::Update(const GameTimer& gt)
     }
 
 	UpdateObjectCBs(gt);
-	UpdateMainPassCB(gt);
-	UpdateReflectedPassCB(gt);
 	UpdateMaterialCB(gt);
+	UpdateMainPassCB(gt);
 }
 
 void ShapesApp::Draw(const GameTimer& gt)
@@ -284,23 +289,6 @@ void ShapesApp::Draw(const GameTimer& gt)
 	mCommandList->SetGraphicsRootConstantBufferView(1, passCB->GetGPUVirtualAddress());
 
     DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
-
-	mCommandList->OMSetStencilRef(1);
-	mCommandList->SetPipelineState(mPSOs["markStencilMirrors"].Get());
-	DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Mirrors]);
-
-	UINT passCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(PassConstants));
-	mCommandList->SetGraphicsRootConstantBufferView(1, passCB->GetGPUVirtualAddress() + 1 * passCBByteSize);
-	mCommandList->SetPipelineState(mPSOs["drawStencilReflections"].Get());
-	DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Reflected]);
-	
-	mCommandList->OMSetStencilRef(0);
-	mCommandList->SetPipelineState(mPSOs["transparent"].Get());
-	DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Transparent]);
-
-	mCommandList->SetPipelineState(mPSOs["shadow"].Get());
-	DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Shadow]);
-
 
     // Indicate a state transition on the resource usage.
 	mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(CurrentBackBuffer(),
@@ -364,15 +352,22 @@ void ShapesApp::OnKeyboardInput(const GameTimer& gt)
 		mCam.Walk(-20 * dt);
 	}
 	if (GetAsyncKeyState('A') & 0x8000) {
-		mCam.Strafe(20 * dt);
+		mCam.Strafe(-20 * dt);
 	}
 	if (GetAsyncKeyState('D') & 0x8000) {
-		mCam.Strafe(-20 * dt);
+		mCam.Strafe(20 * dt);
 	}
     if(GetAsyncKeyState('1') & 0x8000)
         mIsWireframe = true;
     else
         mIsWireframe = false;
+
+	if(GetAsyncKeyState('2') & 0x8000)
+		mFrustumCullingEnabled = false;
+
+	if(GetAsyncKeyState('3') & 0x8000)
+		mFrustumCullingEnabled = true;
+
 	mCam.UpdateViewMatrix();
 }
 
@@ -384,23 +379,37 @@ void ShapesApp::UpdateObjectCBs(const GameTimer& gt)
 	auto currInstanceBuffer = mCurrFrameResource->ObjectCB.get();
 	for(auto& e : mAllRitems)
 	{
-
 		const auto& instanceData = e->instances;
 		int visibleInstanceCount = 0;
 
 		for (UINT i = 0; i < ( UINT )instanceData.size(); i++) {
 			XMMATRIX world = XMLoadFloat4x4(&instanceData[i].World);
 			XMMATRIX texTransform = XMLoadFloat4x4(&instanceData[i].TexTransform);
-			XMMATRIX invWorld = XMLoadFloat4x4(&instanceData[i].InvWorld);
+			XMMATRIX invWorld = XMMatrixInverse(&XMMatrixDeterminant(world), world);
 
 			XMMATRIX viewToLocal = XMMatrixMultiply(invView, invWorld);
 
 			BoundingFrustum localSpaceFrustrum;
-			mCamFrustrum.Transform(localSpaceFrustrum, viewToLocal);
+			mCamFrustum.Transform(localSpaceFrustrum, viewToLocal);
 
 			if ((localSpaceFrustrum.Contains(e->bounds) != DirectX::DISJOINT) || (!mFrustumCullingEnabled)) {
+				ObjectConstants data;
+				XMStoreFloat4x4(&data.World, XMMatrixTranspose(world));
+				XMStoreFloat4x4(&data.InvWorld, XMMatrixTranspose(invWorld));
+				XMStoreFloat4x4(&data.TexTransform, XMMatrixTranspose(texTransform));
+
+				currInstanceBuffer->CopyData(visibleInstanceCount++, data);
 			}
 		}
+
+		e->instanceCount = visibleInstanceCount;
+
+		std::wostringstream outs;
+		outs.precision(6);
+		outs << L"Instancing and Culling Demo" <<
+			L"    " << e->instanceCount <<
+			L" objects visible out of " << e->instances.size();
+		mMainWndCaption = outs.str();
 	}
 }
 
@@ -540,9 +549,9 @@ void ShapesApp::BuildRootSignature()
 	CD3DX12_ROOT_PARAMETER slotRootParameter[4];
 
 	// Create root CBVs.
-	slotRootParameter[0].InitAsConstantBufferView(0);
-	slotRootParameter[1].InitAsConstantBufferView(1);
-	slotRootParameter[2].InitAsConstantBufferView(2);
+	slotRootParameter[0].InitAsShaderResourceView(0, 1);
+	slotRootParameter[1].InitAsConstantBufferView(0);
+	slotRootParameter[2].InitAsConstantBufferView(1);
 	slotRootParameter[3].InitAsDescriptorTable(1, &texTable, D3D12_SHADER_VISIBILITY_PIXEL);
 
 	auto staticSamplers = GetStaticSamplers();
@@ -577,8 +586,8 @@ void ShapesApp::BuildRootSignature()
 
 void ShapesApp::BuildShadersAndInputLayout()
 {
-	mShaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\color.hlsl", nullptr, "VS", "vs_5_1");
-	mShaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\color.hlsl", nullptr, "PS", "ps_5_1");
+	mShaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\InstanceData.hlsl", nullptr, "VS", "vs_5_1");
+	mShaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\InstanceData.hlsl", nullptr, "PS", "ps_5_1");
 	
     mInputLayout =
     {
@@ -1269,7 +1278,7 @@ void ShapesApp::BuildFrameResources()
     for(int i = 0; i < gNumFrameResources; ++i)
     {
         mFrameResources.push_back(std::make_unique<FrameResource>(md3dDevice.Get(),
-            2, (UINT)mAllRitems.size(), (UINT)mMaterials.size()));
+            1, mInstanceCount, (UINT)mMaterials.size()));
     }
 }
 
@@ -1284,19 +1293,14 @@ void ShapesApp::BuildRenderItems() {
 	skullRitem->IndexCount = skullRitem->Geo->DrawArgs["skull"].IndexCount;
 	skullRitem->StartIndexLocation = skullRitem->Geo->DrawArgs["skull"].StartIndexLocation;
 	skullRitem->BaseVertexLocation = skullRitem->Geo->DrawArgs["skull"].BaseVertexLocation;
-	XMMATRIX skullRotate = XMMatrixRotationY(0.5f*MathHelper::Pi);
-	XMMATRIX skullScale = XMMatrixScaling(0.45f, 0.45f, 0.45f);
-	XMMATRIX skullOffset = XMMatrixTranslation(0.0f, 1.0f, -5.0f);
-	XMMATRIX skullWorld = skullRotate*skullScale*skullOffset;
-	XMStoreFloat4x4(&skullRitem->World, skullWorld);
 	skullRitem->bounds = skullRitem->Geo->DrawArgs["skull"].Bounds;
 
-
 	// Generate instance data.
-	const int n = 5;
+	const int n = 3;
 	int instanceCount = n*n*n;
 	skullRitem->instances.resize(instanceCount);
-
+	skullRitem->instanceCount = instanceCount;
+	mInstanceCount += instanceCount;
 
 	float width = 200.0f;
 	float height = 200.0f;
@@ -1322,13 +1326,16 @@ void ShapesApp::BuildRenderItems() {
 					0.0f, 0.0f, 1.0f, 0.0f,
 					x + j*dx, y + i*dy, z + k*dz, 1.0f);
 
+				XMMATRIX w = XMLoadFloat4x4(&skullRitem->instances[index].World);
+				XMStoreFloat4x4(&skullRitem->instances[index].InvWorld, XMMatrixInverse(&XMMatrixDeterminant(w), w));
+
 				XMStoreFloat4x4(&skullRitem->instances[index].TexTransform, XMMatrixScaling(2.0f, 2.0f, 1.0f));
 			}
 		}
 	}
 
-	mAllRitems.push_back(std::move(skullRitem));
 	mRitemLayer[(int)RenderLayer::Opaque].push_back(skullRitem.get());
+	mAllRitems.push_back(std::move(skullRitem));
 }
 
 
@@ -1348,7 +1355,7 @@ void ShapesApp::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::v
         auto ri = ritems[i];
 
 		CD3DX12_GPU_DESCRIPTOR_HANDLE handle(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-		cmdList->SetGraphicsRootConstantBufferView(0, objectCB->GetGPUVirtualAddress() + ri->ObjCBIndex * objCBByteSize);
+		cmdList->SetGraphicsRootShaderResourceView(0, objectCB->GetGPUVirtualAddress());
 		cmdList->SetGraphicsRootConstantBufferView(2, materialCB->GetGPUVirtualAddress() + ri->Mat->MatCBIndex * matCBByteSize);
 
 		handle.Offset(ri->Mat->DiffuseSrvHeapIndex * mCbvSrvUavDescriptorSize);
@@ -1357,6 +1364,7 @@ void ShapesApp::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::v
 		cmdList->IASetVertexBuffers(0, 1, &ri->Geo->VertexBufferView());
 		cmdList->IASetIndexBuffer(&ri->Geo->IndexBufferView());
 		cmdList->IASetPrimitiveTopology(ri->PrimitiveType);
-        cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
+
+        cmdList->DrawIndexedInstanced(ri->IndexCount, ri->instanceCount, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
     }
 }
