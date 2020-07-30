@@ -12,6 +12,15 @@
 
 #include "lightingUtil.hlsl"
 
+struct InstanceData
+{
+	float4x4 World; 
+    float4x4 InvTransWorld;
+    float4x4 TexTransform;
+};
+
+StructuredBuffer<InstanceData> gInstanceData : register(t0, space1);
+
 Texture2D gDiffuseMap : register(t0);
 
 SamplerState gsamPointWrap : register(s0);
@@ -21,14 +30,7 @@ SamplerState gsamLinearClamp : register(s3);
 SamplerState gsamAnisotropicWrap : register(s4);
 SamplerState gsamAnisotropicClamp : register(s5);
 
-struct InstanceData
-{
-	float4x4 World; 
-    float4x4 InvTransWorld;
-    float4x4 TexTransform;
-};
 
-StructuredBuffer<InstanceData> gInstanceData : register(t0, space1);
 
 cbuffer cbPass : register(b0)
 {
