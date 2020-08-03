@@ -41,6 +41,8 @@ struct RenderItem
 
 	std::vector<ObjectConstants> instances;
 
+	int selectedId = -1;
+
 	BoundingBox bounds;
 
 	UINT instanceCount = 0;
@@ -49,10 +51,12 @@ struct RenderItem
     UINT IndexCount = 0;
     UINT StartIndexLocation = 0;
     int BaseVertexLocation = 0;
+
 };
 
 enum class RenderLayer : int{
 	Opaque = 0,
+	Seleted,
 	Mirrors,
 	Reflected,
 	Transparent,
@@ -80,7 +84,6 @@ private:
     virtual void OnMouseMove(WPARAM btnState, int x, int y)override;
 
     void OnKeyboardInput(const GameTimer& gt);
-	void UpdateCamera(const GameTimer& gt);
 	void UpdateObjectCBs(const GameTimer& gt);
 	void UpdateMainPassCB(const GameTimer& gt);
 	void UpdateMaterialCB(const GameTimer& gt);
@@ -90,8 +93,6 @@ private:
 	void BuildShaderResourceBufferViews();
     void BuildRootSignature();
     void BuildShadersAndInputLayout();
-    void BuildShapeGeometry();
-	void BuildRoomGeometry();
     void BuildPSOs();
     void BuildFrameResources();
     void BuildRenderItems();
@@ -100,6 +101,8 @@ private:
 	void LoadTextures();
 	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> GetStaticSamplers();
     void DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritems);
+
+	void Pick(int sx, int sy);
  
 private:
 
@@ -307,12 +310,65 @@ void ShapesApp::Draw(const GameTimer& gt)
     mCommandQueue->Signal(mFence.Get(), mCurrentFence);
 }
 
+void ShapesApp::Pick(int sx, int sy) {
+	XMFLOAT4X4 P = mCam.GetProj4x4f();
+
+	// Compute picking ray in view space
+	float vx = (+2.0f * sx / mClientWidth - 1.0f) / P(0, 0);
+	float vy = (-2.0f * sy / mClientHeight + 1.0f) / P(1, 1);
+
+	XMVECTOR rayOriginView = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
+	XMVECTOR rayDirectionView = XMVectorSet(vx, vy, 1.0f, 0.0f);
+
+	XMMATRIX V = mCam.GetView();
+	XMMATRIX invView = XMMatrixInverse(&XMMatrixDeterminant(V), V);
+	float tmin = MathHelper::Infinity;
+
+	int id = -1;
+
+	for (auto ri : mRitemLayer[( int )RenderLayer::Opaque]) {
+		auto instanceData = ri->instances;
+
+		for (UINT i = 0; i < instanceData.size(); i++) {
+
+			instanceData[i].selected = 0;
+
+			XMMATRIX W = XMLoadFloat4x4(&instanceData[i].World);
+			XMMATRIX invWorld = XMMatrixInverse(&XMMatrixDeterminant(W), W);
+
+			XMMATRIX toLocal = XMMatrixMultiply(invView, invWorld);
+			XMVECTOR rayOrigin = XMVector3TransformCoord(rayOriginView, toLocal);
+			XMVECTOR rayDirection = XMVector3TransformNormal(rayDirectionView, toLocal);
+
+			rayDirection = XMVector3Normalize(rayDirection);
+
+			float t = 0.0f;
+			if (ri->bounds.Intersects(rayOrigin, rayDirection, t)) {
+				if (t < tmin) {
+					tmin = t;
+					id = i;
+				}
+			}
+		}
+
+		if (id != -1) {
+			instanceData[id].selected = 1;
+		}
+		ri->selectedId = id;
+	}
+}
+
 void ShapesApp::OnMouseDown(WPARAM btnState, int x, int y)
 {
-    mLastMousePos.x = x;
-    mLastMousePos.y = y;
+	if ((btnState & MK_RBUTTON) != 0) {
+		Pick(x, y);
+	}
+	if ((btnState & MK_LBUTTON) != 0) {
+		mLastMousePos.x = x;
+		mLastMousePos.y = y;
 
-    SetCapture(mhMainWnd);
+		SetCapture(mhMainWnd);
+	}
 }
 
 void ShapesApp::OnMouseUp(WPARAM btnState, int x, int y)
@@ -385,6 +441,9 @@ void ShapesApp::UpdateObjectCBs(const GameTimer& gt)
 				XMStoreFloat4x4(&data.World, XMMatrixTranspose(world));
 				XMStoreFloat4x4(&data.TexTransform, XMMatrixTranspose(texTransform));
 				XMStoreFloat4x4(&data.InvWorld, invWorld);
+				if (i == e->selectedId) {
+					data.selected = 1;
+				}
 
 				currInstanceBuffer->CopyData(visibleInstanceCount++, data);
 			}
@@ -829,10 +888,10 @@ void ShapesApp::BuildSkull() {
 
 void ShapesApp::BuildMaterials() {
 	auto bricks0 = std::make_unique<Material>();
-	bricks0->Name = "bricks0";
+	bricks0->Name = "highlight";
 	bricks0->MatCBIndex = 0;
-	bricks0->DiffuseSrvHeapIndex = 0;
-	bricks0->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	bricks0->DiffuseSrvHeapIndex = 3;
+	bricks0->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 0.0f, 1.0f);
 	bricks0->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
 	bricks0->Roughness = 0.1f;
 

@@ -17,6 +17,10 @@ struct InstanceData
 	float4x4 World; 
     float4x4 InvTransWorld;
     float4x4 TexTransform;
+    uint selected;
+    uint pad0;
+    uint pad1;
+    uint pad2;
 };
 
 StructuredBuffer<InstanceData> gInstanceData : register(t0, space1);
@@ -79,6 +83,7 @@ struct VertexOut
     float3 NormalW : NORMAL;
     float3 PosW : POSITION;
     float2 TexC : TEXCOORD;
+    nointerpolation uint selected : SELECTED;
 };
 
 
@@ -99,13 +104,18 @@ VertexOut VS(VertexIn vin, uint instanceID : SV_InstanceID)
     float4 TexC = mul(float4(vin.TexC, 0.0f, 1.0f), gMatTransform);
 
     vout.TexC = mul(TexC, inst.TexTransform).xy;
+
+    vout.selected = inst.selected;
     
     return vout;
 }
 
 float4 PS(VertexOut pin) : SV_Target
 {
+
     float4 diffuseAlbedo = gDiffuseMap.Sample(gsamAnisotropicWrap, pin.TexC) * gDiffuseAlbedo;
+
+    diffuseAlbedo.r *= (1 - pin.selected);
 
     pin.NormalW = normalize(pin.NormalW);
     float3 toEyeW = normalize(gEyePosW - pin.PosW);
