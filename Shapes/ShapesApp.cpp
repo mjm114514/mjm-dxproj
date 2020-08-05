@@ -374,9 +374,11 @@ void ShapesApp::UpdateObjectCBs(const GameTimer& gt)
 		{
 			XMMATRIX world = XMLoadFloat4x4(&e->World);
 			XMMATRIX texTransform = XMLoadFloat4x4(&e->TexTransform);
+			XMMATRIX invWorld = XMMatrixInverse(&XMMatrixDeterminant(world), world);
 
 			ObjectConstants objConstants;
 			XMStoreFloat4x4(&objConstants.World, XMMatrixTranspose(world));
+			XMStoreFloat4x4(&objConstants.InvTransWorld, invWorld);
 			XMStoreFloat4x4(&objConstants.TexTransform, XMMatrixTranspose(texTransform));
 			objConstants.MaterialIndex = e->Mat->MatCBIndex;
 
@@ -468,58 +470,63 @@ void ShapesApp::BuildDescriptorHeaps()
 }
 
 void ShapesApp::BuildShaderResourceBufferViews(){
+	//
+	// Create the SRV heap.
+	//
+	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
+	srvHeapDesc.NumDescriptors = 5;
+	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	ThrowIfFailed(md3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&mSrvDescriptorHeap)));
 
-	CD3DX12_CPU_DESCRIPTOR_HANDLE handle(mSrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+	//
+	// Fill out the heap with actual descriptors.
+	//
+	CD3DX12_CPU_DESCRIPTOR_HANDLE hDescriptor(mSrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+
+	auto bricksTex = mTextures["bricksDiffuseMap"]->Resource;
+	auto tileTex = mTextures["tileDiffuseMap"]->Resource;
+	auto whiteTex = mTextures["defaultDiffuseMap"]->Resource;
+	auto skyTex = mTextures["skyCubeMap"]->Resource;
 
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-
-	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Format = bricksTex->GetDesc().Format;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	srvDesc.Texture2D.MostDetailedMip = 0;
+	srvDesc.Texture2D.MipLevels = bricksTex->GetDesc().MipLevels;
 	srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
+	md3dDevice->CreateShaderResourceView(bricksTex.Get(), &srvDesc, hDescriptor);
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> TexResource = mTextures["bricks0"]->Resource;
-	srvDesc.Format = TexResource->GetDesc().Format;
-	srvDesc.Texture2D.MipLevels = TexResource->GetDesc().MipLevels;
-	md3dDevice->CreateShaderResourceView(TexResource.Get(), &srvDesc, handle);
-	handle.Offset(1, mCbvSrvUavDescriptorSize);
+	// next descriptor
+	hDescriptor.Offset(1, mCbvSrvUavDescriptorSize);
 
-	TexResource = mTextures["stone0"]->Resource;
-	srvDesc.Format = TexResource->GetDesc().Format;
-	srvDesc.Texture2D.MipLevels = TexResource->GetDesc().MipLevels;
-	md3dDevice->CreateShaderResourceView(TexResource.Get(), &srvDesc, handle);
-	handle.Offset(1, mCbvSrvUavDescriptorSize);
+	srvDesc.Format = tileTex->GetDesc().Format;
+	srvDesc.Texture2D.MipLevels = tileTex->GetDesc().MipLevels;
+	md3dDevice->CreateShaderResourceView(tileTex.Get(), &srvDesc, hDescriptor);
 
-	TexResource = mTextures["tile0"]->Resource;
-	srvDesc.Format = TexResource->GetDesc().Format;
-	srvDesc.Texture2D.MipLevels = TexResource->GetDesc().MipLevels;
-	md3dDevice->CreateShaderResourceView(TexResource.Get(), &srvDesc, handle);
-	handle.Offset(1, mCbvSrvUavDescriptorSize);
+	// next descriptor
+	hDescriptor.Offset(1, mCbvSrvUavDescriptorSize);
 
-	TexResource = mTextures["skull"]->Resource;
-	srvDesc.Format = TexResource->GetDesc().Format;
-	srvDesc.Texture2D.MipLevels = TexResource->GetDesc().MipLevels;
-	md3dDevice->CreateShaderResourceView(TexResource.Get(), &srvDesc, handle);
-	handle.Offset(1, mCbvSrvUavDescriptorSize);
+	srvDesc.Format = whiteTex->GetDesc().Format;
+	srvDesc.Texture2D.MipLevels = whiteTex->GetDesc().MipLevels;
+	md3dDevice->CreateShaderResourceView(whiteTex.Get(), &srvDesc, hDescriptor);
 
-	TexResource = mTextures["ice"]->Resource;
-	srvDesc.Format = TexResource->GetDesc().Format;
-	srvDesc.Texture2D.MipLevels = TexResource->GetDesc().MipLevels;
-	md3dDevice->CreateShaderResourceView(TexResource.Get(), &srvDesc, handle);
-	handle.Offset(1, mCbvSrvUavDescriptorSize);
+	// next descriptor
+	hDescriptor.Offset(1, mCbvSrvUavDescriptorSize);
 
-	TexResource = mTextures["checkboard"]->Resource;
-	srvDesc.Format = TexResource->GetDesc().Format;
-	srvDesc.Texture2D.MipLevels = TexResource->GetDesc().MipLevels;
-	md3dDevice->CreateShaderResourceView(TexResource.Get(), &srvDesc, handle);
-	handle.Offset(1, mCbvSrvUavDescriptorSize);
-
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
+	srvDesc.TextureCube.MostDetailedMip = 0;
+	srvDesc.TextureCube.MipLevels = skyTex->GetDesc().MipLevels;
+	srvDesc.TextureCube.ResourceMinLODClamp = 0.0f;
+	srvDesc.Format = skyTex->GetDesc().Format;
+	md3dDevice->CreateShaderResourceView(skyTex.Get(), &srvDesc, hDescriptor);
 }
 
 void ShapesApp::BuildRootSignature()
 {
 	CD3DX12_DESCRIPTOR_RANGE texTable;
-	texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 6, 0);
+	texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 0);
 	// Root parameter can be a table, root descriptor or root constants.
 	CD3DX12_ROOT_PARAMETER slotRootParameter[4];
 
@@ -573,78 +580,33 @@ void ShapesApp::BuildShadersAndInputLayout()
 }
 
 void ShapesApp::LoadTextures(){
-	auto bricks0 = std::make_unique<Texture>();
-	bricks0->Filename = L"..\\Textures\\bricks.dds";
-	bricks0->Name = "bricks0";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		md3dDevice.Get(),
-		mCommandList.Get(),
-		bricks0->Filename.c_str(),
-		bricks0->Resource,
-		bricks0->UploadHeap
-	));
+	std::vector<std::string> texNames =
+	{
+		"bricksDiffuseMap",
+		"tileDiffuseMap",
+		"defaultDiffuseMap",
+		"skyCubeMap"
+	};
 
-	auto stone = std::make_unique<Texture>();
-	stone->Name = "stone0";
-	stone->Filename = L"..\\Textures\\stone.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		md3dDevice.Get(),
-		mCommandList.Get(),
-		stone->Filename.c_str(),
-		stone->Resource,
-		stone->UploadHeap
-	));
+	std::vector<std::wstring> texFilenames =
+	{
+		L"../Textures/bricks2.dds",
+		L"../Textures/tile.dds",
+		L"../Textures/white1x1.dds",
+		L"../Textures/grasscube1024.dds"
+	};
 
-	auto tile = std::make_unique<Texture>();
-	tile->Name = "tile0";
-	tile->Filename = L"..\\Textures\\tile.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		md3dDevice.Get(),
-		mCommandList.Get(),
-		tile->Filename.c_str(),
-		tile->Resource,
-		tile->UploadHeap
-	));
+	for (int i = 0; i < ( int )texNames.size(); ++i)
+	{
+		auto texMap = std::make_unique<Texture>();
+		texMap->Name = texNames[i];
+		texMap->Filename = texFilenames[i];
+		ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(md3dDevice.Get(),
+			mCommandList.Get(), texMap->Filename.c_str(),
+			texMap->Resource, texMap->UploadHeap));
 
-	auto skull = std::make_unique<Texture>();
-	skull->Name = "skull";
-	skull->Filename = L"..\\Textures\\white1x1.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		md3dDevice.Get(),
-		mCommandList.Get(),
-		skull->Filename.c_str(),
-		skull->Resource,
-		skull->UploadHeap
-	));
-
-	auto ice = std::make_unique<Texture>();
-	ice->Name = "ice";
-	ice->Filename = L"..\\Textures\\ice.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		md3dDevice.Get(),
-		mCommandList.Get(),
-		ice->Filename.c_str(),
-		ice->Resource,
-		ice->UploadHeap
-	));
-
-	auto checkboard = std::make_unique<Texture>();
-	checkboard->Name = "checkboard";
-	checkboard->Filename = L"..\\Textures\\checkboard.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		md3dDevice.Get(),
-		mCommandList.Get(),
-		checkboard->Filename.c_str(),
-		checkboard->Resource,
-		checkboard->UploadHeap
-	));
-
-	mTextures[bricks0->Name] = std::move(bricks0);
-	mTextures[stone->Name] = std::move(stone);
-	mTextures[tile->Name] = std::move(tile);
-	mTextures[skull->Name] = std::move(skull);
-	mTextures[ice->Name] = std::move(ice);
-	mTextures[checkboard->Name] = std::move(checkboard);
+		mTextures[texMap->Name] = std::move(texMap);
+	}
 }
 
 std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> ShapesApp::GetStaticSamplers(){
@@ -940,68 +902,51 @@ void ShapesApp::BuildShape() {
 
 void ShapesApp::BuildMaterials() {
 	auto bricks0 = std::make_unique<Material>();
-	bricks0->Name = "highlight";
+	bricks0->Name = "bricks0";
 	bricks0->MatCBIndex = 0;
-	bricks0->DiffuseSrvHeapIndex = 3;
-	bricks0->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 0.0f, 1.0f);
-	bricks0->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
-	bricks0->Roughness = 0.1f;
+	bricks0->DiffuseSrvHeapIndex = 0;
+	bricks0->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	bricks0->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
+	bricks0->Roughness = 0.3f;
 
-	auto stone0 = std::make_unique<Material>();
-	stone0->Name = "stone0";
-	stone0->MatCBIndex = 1;
-	stone0->DiffuseSrvHeapIndex = 1;
-	stone0->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	stone0->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
-	stone0->Roughness = 0.3f;
- 
 	auto tile0 = std::make_unique<Material>();
 	tile0->Name = "tile0";
-	tile0->MatCBIndex = 2;
-	tile0->DiffuseSrvHeapIndex = 2;
-	tile0->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	tile0->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
-	tile0->Roughness = 0.2f;
+	tile0->MatCBIndex = 1;
+	tile0->DiffuseSrvHeapIndex = 1;
+	tile0->DiffuseAlbedo = XMFLOAT4(0.9f, 0.9f, 0.9f, 1.0f);
+	tile0->FresnelR0 = XMFLOAT3(0.2f, 0.2f, 0.2f);
+	tile0->Roughness = 0.1f;
+
+	auto mirror0 = std::make_unique<Material>();
+	mirror0->Name = "mirror0";
+	mirror0->MatCBIndex = 2;
+	mirror0->DiffuseSrvHeapIndex = 2;
+	mirror0->DiffuseAlbedo = XMFLOAT4(0.0f, 0.0f, 0.1f, 1.0f);
+	mirror0->FresnelR0 = XMFLOAT3(0.98f, 0.97f, 0.95f);
+	mirror0->Roughness = 0.1f;
 
 	auto skullMat = std::make_unique<Material>();
-	skullMat->Name = "skull";
+	skullMat->Name = "skullMat";
 	skullMat->MatCBIndex = 3;
-	skullMat->DiffuseSrvHeapIndex = 3;
-	skullMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	skullMat->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
-	skullMat->Roughness = 0.3f;
+	skullMat->DiffuseSrvHeapIndex = 2;
+	skullMat->DiffuseAlbedo = XMFLOAT4(0.8f, 0.8f, 0.8f, 1.0f);
+	skullMat->FresnelR0 = XMFLOAT3(0.2f, 0.2f, 0.2f);
+	skullMat->Roughness = 0.2f;
 
-	auto ice = std::make_unique<Material>();
-	ice->Name = "ice";
-	ice->MatCBIndex = 4;
-	ice->DiffuseSrvHeapIndex = 4;
-	ice->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 0.3f);
-	ice->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
-	ice->Roughness = 0.5f;
-
-	auto checkboard = std::make_unique<Material>();
-	checkboard->Name = "checkboard";
-	checkboard->MatCBIndex = 5;
-	checkboard->DiffuseSrvHeapIndex = 5;
-	checkboard->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	checkboard->FresnelR0 = XMFLOAT3(0.07f, 0.07f, 0.07f);
-	checkboard->Roughness = 0.3f;
-	
-	auto shadow = std::make_unique<Material>();
-	shadow->Name = "shadow";
-	shadow->MatCBIndex = 6;
-	shadow->DiffuseSrvHeapIndex = 3;
-	shadow->DiffuseAlbedo = XMFLOAT4(0.0f, 0.0f, 0.0f, 0.5f);
-	shadow->FresnelR0 = XMFLOAT3(0.001f, 0.001f, 0.001f);
-	shadow->Roughness = 0.0f;
+	auto sky = std::make_unique<Material>();
+	sky->Name = "sky";
+	sky->MatCBIndex = 4;
+	sky->DiffuseSrvHeapIndex = 3;
+	sky->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	sky->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
+	sky->Roughness = 1.0f;
 
 	mMaterials["bricks0"] = std::move(bricks0);
-	mMaterials["stone0"] = std::move(stone0);
 	mMaterials["tile0"] = std::move(tile0);
-	mMaterials["skull"] = std::move(skullMat);
-	mMaterials["ice"] = std::move(ice);
-	mMaterials["checkboard"] = std::move(checkboard);
-	mMaterials["shadow"] = std::move(shadow);
+	mMaterials["mirror0"] = std::move(mirror0);
+	mMaterials["skullMat"] = std::move(skullMat);
+	mMaterials["sky"] = std::move(sky);
+
 }
 
 void ShapesApp::BuildPSOs()
@@ -1042,7 +987,7 @@ void ShapesApp::BuildFrameResources()
     for(int i = 0; i < gNumFrameResources; ++i)
     {
         mFrameResources.push_back(std::make_unique<FrameResource>(md3dDevice.Get(),
-            1, mInstanceCount, (UINT)mMaterials.size()));
+            1, (UINT)mAllRitems.size(), (UINT)mMaterials.size()));
     }
 }
 
@@ -1052,7 +997,7 @@ void ShapesApp::BuildRenderItems() {
 	skullRitem->World = MathHelper::Identity4x4();
 	skullRitem->TexTransform = MathHelper::Identity4x4();
 	skullRitem->ObjCBIndex = 1;
-	skullRitem->Mat = mMaterials["skull"].get();
+	skullRitem->Mat = mMaterials["skullMat"].get();
 	skullRitem->Geo = mGeometries["skull"].get();
 	skullRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	skullRitem->IndexCount = skullRitem->Geo->DrawArgs["skull"].IndexCount;
@@ -1067,7 +1012,7 @@ void ShapesApp::BuildRenderItems() {
 	XMStoreFloat4x4(&boxRitem->TexTransform, XMMatrixScaling(1.0f, 1.0f, 1.0f));
 	boxRitem->ObjCBIndex = 2;
 	boxRitem->Mat = mMaterials["bricks0"].get();
-	boxRitem->Geo = mGeometries["shapeGeo"].get();
+	boxRitem->Geo = mGeometries["shape"].get();
 	boxRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	boxRitem->IndexCount = boxRitem->Geo->DrawArgs["box"].IndexCount;
 	boxRitem->StartIndexLocation = boxRitem->Geo->DrawArgs["box"].StartIndexLocation;
@@ -1081,7 +1026,7 @@ void ShapesApp::BuildRenderItems() {
 	XMStoreFloat4x4(&gridRitem->TexTransform, XMMatrixScaling(8.0f, 8.0f, 1.0f));
 	gridRitem->ObjCBIndex = 4;
 	gridRitem->Mat = mMaterials["tile0"].get();
-	gridRitem->Geo = mGeometries["shapeGeo"].get();
+	gridRitem->Geo = mGeometries["shape"].get();
 	gridRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
     gridRitem->IndexCount = gridRitem->Geo->DrawArgs["grid"].IndexCount;
     gridRitem->StartIndexLocation = gridRitem->Geo->DrawArgs["grid"].StartIndexLocation;
@@ -1109,7 +1054,7 @@ void ShapesApp::BuildRenderItems() {
 		XMStoreFloat4x4(&leftCylRitem->TexTransform, brickTexTransform);
 		leftCylRitem->ObjCBIndex = objCBIndex++;
 		leftCylRitem->Mat = mMaterials["bricks0"].get();
-		leftCylRitem->Geo = mGeometries["shapeGeo"].get();
+		leftCylRitem->Geo = mGeometries["shape"].get();
 		leftCylRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 		leftCylRitem->IndexCount = leftCylRitem->Geo->DrawArgs["cylinder"].IndexCount;
 		leftCylRitem->StartIndexLocation = leftCylRitem->Geo->DrawArgs["cylinder"].StartIndexLocation;
@@ -1119,7 +1064,7 @@ void ShapesApp::BuildRenderItems() {
 		XMStoreFloat4x4(&rightCylRitem->TexTransform, brickTexTransform);
 		rightCylRitem->ObjCBIndex = objCBIndex++;
 		rightCylRitem->Mat = mMaterials["bricks0"].get();
-		rightCylRitem->Geo = mGeometries["shapeGeo"].get();
+		rightCylRitem->Geo = mGeometries["shape"].get();
 		rightCylRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 		rightCylRitem->IndexCount = rightCylRitem->Geo->DrawArgs["cylinder"].IndexCount;
 		rightCylRitem->StartIndexLocation = rightCylRitem->Geo->DrawArgs["cylinder"].StartIndexLocation;
@@ -1129,7 +1074,7 @@ void ShapesApp::BuildRenderItems() {
 		leftSphereRitem->TexTransform = MathHelper::Identity4x4();
 		leftSphereRitem->ObjCBIndex = objCBIndex++;
 		leftSphereRitem->Mat = mMaterials["mirror0"].get();
-		leftSphereRitem->Geo = mGeometries["shapeGeo"].get();
+		leftSphereRitem->Geo = mGeometries["shape"].get();
 		leftSphereRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 		leftSphereRitem->IndexCount = leftSphereRitem->Geo->DrawArgs["sphere"].IndexCount;
 		leftSphereRitem->StartIndexLocation = leftSphereRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
@@ -1139,7 +1084,7 @@ void ShapesApp::BuildRenderItems() {
 		rightSphereRitem->TexTransform = MathHelper::Identity4x4();
 		rightSphereRitem->ObjCBIndex = objCBIndex++;
 		rightSphereRitem->Mat = mMaterials["mirror0"].get();
-		rightSphereRitem->Geo = mGeometries["shapeGeo"].get();
+		rightSphereRitem->Geo = mGeometries["shape"].get();
 		rightSphereRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 		rightSphereRitem->IndexCount = rightSphereRitem->Geo->DrawArgs["sphere"].IndexCount;
 		rightSphereRitem->StartIndexLocation = rightSphereRitem->Geo->DrawArgs["sphere"].StartIndexLocation;

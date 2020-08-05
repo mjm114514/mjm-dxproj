@@ -41,7 +41,7 @@ VertexOut VS(VertexIn vin)
     vout.PosW = posW.xyz;
 
     // Assumes nonuniform scaling; otherwise, need to use inverse-transpose of world matrix.
-    vout.NormalW = mul(vin.NormalL, (float3x3) gWorld);
+    vout.NormalW = mul(vin.NormalL, (float3x3) gInvTransWorld);
 
     // Transform to homogeneous clip space.
     vout.PosH = mul(posW, gViewProj);
@@ -81,9 +81,6 @@ float4 PS(VertexOut pin) : SV_Target
         pin.NormalW, toEyeW, shadowFactor);
 
     float4 litColor = ambient + directLight;
-
-	// Add in specular reflections.
-    float3 r = reflect(-toEyeW, pin.NormalW);
 
     // Common convention to take alpha from diffuse albedo.
     litColor.a = diffuseAlbedo.a;
