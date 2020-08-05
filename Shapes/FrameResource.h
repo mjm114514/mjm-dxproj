@@ -9,7 +9,7 @@ struct ObjectConstants
     DirectX::XMFLOAT4X4 World = MathHelper::Identity4x4();
     DirectX::XMFLOAT4X4 InvWorld = MathHelper::Identity4x4();
     DirectX::XMFLOAT4X4 TexTransform = MathHelper::Identity4x4();
-    std::uint32_t selected = 0;
+    std::uint32_t MaterialIndex;
     std::uint32_t pad0;
     std::uint32_t pad1;
     std::uint32_t pad2;
