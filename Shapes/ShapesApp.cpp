@@ -46,11 +46,7 @@ struct RenderItem
 
 enum class RenderLayer : int{
 	Opaque = 0,
-	Seleted,
-	Mirrors,
-	Reflected,
-	Transparent,
-	Shadow,
+	Sky,
 	Count
 };
 
@@ -124,6 +120,7 @@ private:
 
     UINT mPassCbvOffset = 0;
 	UINT mMatCbvOffset = 0;
+	UINT mSkyTexHeapIndex = 0;
 
     bool mIsWireframe = false;
 
@@ -271,15 +268,23 @@ void ShapesApp::Draw(const GameTimer& gt)
 
 	mCommandList->SetGraphicsRootSignature(mRootSignature.Get());
 
-	mCommandList->SetGraphicsRootDescriptorTable(0, mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+	CD3DX12_GPU_DESCRIPTOR_HANDLE skyTexHandle(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+	skyTexHandle.Offset(mSkyTexHeapIndex, mCbvSrvUavDescriptorSize);
+	mCommandList->SetGraphicsRootDescriptorTable(0, skyTexHandle);
+
+	mCommandList->SetGraphicsRootDescriptorTable(1, mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
 	auto matBuffer = mCurrFrameResource->MaterialCB->Resource();
-	mCommandList->SetGraphicsRootShaderResourceView(1, matBuffer->GetGPUVirtualAddress());
+	mCommandList->SetGraphicsRootShaderResourceView(2, matBuffer->GetGPUVirtualAddress());
 
 	auto passCB = mCurrFrameResource->PassCB->Resource();
-	mCommandList->SetGraphicsRootConstantBufferView(3, passCB->GetGPUVirtualAddress());
+	mCommandList->SetGraphicsRootConstantBufferView(4, passCB->GetGPUVirtualAddress());
 
     DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
+
+	mCommandList->SetPipelineState(mPSOs["sky"].Get());
+
+	DrawRenderItems(mCommandList.Get(), mRitemLayer[( int )RenderLayer::Sky]);
 
     // Indicate a state transition on the resource usage.
 	mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(CurrentBackBuffer(),
@@ -509,26 +514,31 @@ void ShapesApp::BuildShaderResourceBufferViews(){
 	srvDesc.TextureCube.ResourceMinLODClamp = 0.0f;
 	srvDesc.Format = skyTex->GetDesc().Format;
 	md3dDevice->CreateShaderResourceView(skyTex.Get(), &srvDesc, hDescriptor);
+
+	mSkyTexHeapIndex = 3;
 }
 
 void ShapesApp::BuildRootSignature()
 {
-	CD3DX12_DESCRIPTOR_RANGE texTable;
-	texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 0);
+	CD3DX12_DESCRIPTOR_RANGE texTableSky;
+	texTableSky.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+	CD3DX12_DESCRIPTOR_RANGE texTableCommon;
+	texTableCommon.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 1);
 	// Root parameter can be a table, root descriptor or root constants.
-	CD3DX12_ROOT_PARAMETER slotRootParameter[4];
+	CD3DX12_ROOT_PARAMETER slotRootParameter[5];
 
 	// Create root CBVs.
-	slotRootParameter[0].InitAsDescriptorTable(1, &texTable, D3D12_SHADER_VISIBILITY_PIXEL);
-	slotRootParameter[1].InitAsShaderResourceView(0, 1);
-	slotRootParameter[2].InitAsConstantBufferView(0);
-	slotRootParameter[3].InitAsConstantBufferView(1);
+	slotRootParameter[0].InitAsDescriptorTable(1, &texTableSky, D3D12_SHADER_VISIBILITY_PIXEL);
+	slotRootParameter[1].InitAsDescriptorTable(1, &texTableCommon, D3D12_SHADER_VISIBILITY_PIXEL);
+	slotRootParameter[2].InitAsShaderResourceView(0, 1);
+	slotRootParameter[3].InitAsConstantBufferView(0);
+	slotRootParameter[4].InitAsConstantBufferView(1);
 
 	auto staticSamplers = GetStaticSamplers();
 
 	// A root signature is an array of root parameters.
 	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(
-		4, 
+		5, 
 		slotRootParameter,
 		(UINT)staticSamplers.size(),
 		staticSamplers.data(),
@@ -558,6 +568,9 @@ void ShapesApp::BuildShadersAndInputLayout()
 {
 	mShaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\color.hlsl", nullptr, "VS", "vs_5_1");
 	mShaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\color.hlsl", nullptr, "PS", "ps_5_1");
+
+	mShaders["skyVS"] = d3dUtil::CompileShader(L"Shaders\\sky.hlsl", nullptr, "VS", "vs_5_1");
+	mShaders["skyPS"] = d3dUtil::CompileShader(L"Shaders\\sky.hlsl", nullptr, "PS", "ps_5_1");
 	
     mInputLayout =
     {
@@ -968,6 +981,22 @@ void ShapesApp::BuildPSOs()
 	opaquePsoDesc.SampleDesc.Quality = m4xMsaaState ? (m4xMsaaQuality - 1) : 0;
 	opaquePsoDesc.DSVFormat = mDepthStencilFormat;
     ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&opaquePsoDesc, IID_PPV_ARGS(&mPSOs["opaque"])));
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC skyPsoDesc = opaquePsoDesc;
+	skyPsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+	skyPsoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+	skyPsoDesc.VS = {
+		reinterpret_cast< BYTE* >(mShaders["skyVS"]->GetBufferPointer()),
+		mShaders["skyVS"]->GetBufferSize()
+	};
+	skyPsoDesc.PS = {
+		reinterpret_cast< BYTE* >(mShaders["skyPS"]->GetBufferPointer()),
+		mShaders["skyPS"]->GetBufferSize()
+	};
+	ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(
+		&skyPsoDesc,
+		IID_PPV_ARGS(&mPSOs["sky"])
+	));
 }
 
 void ShapesApp::BuildFrameResources()
@@ -980,6 +1009,19 @@ void ShapesApp::BuildFrameResources()
 }
 
 void ShapesApp::BuildRenderItems() {
+	auto skyRitem = std::make_unique<RenderItem>();
+	XMStoreFloat4x4(&skyRitem->World, XMMatrixScaling(5000.0f, 5000.0f, 5000.0f));
+	skyRitem->TexTransform = MathHelper::Identity4x4();
+	skyRitem->ObjCBIndex = 0;
+	skyRitem->Mat = mMaterials["sky"].get();
+	skyRitem->Geo = mGeometries["shape"].get();
+	skyRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	skyRitem->IndexCount = skyRitem->Geo->DrawArgs["sphere"].IndexCount;
+	skyRitem->StartIndexLocation = skyRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
+	skyRitem->BaseVertexLocation = skyRitem->Geo->DrawArgs["sphere"].BaseVertexLocation;
+
+	mRitemLayer[(int)RenderLayer::Sky].push_back(skyRitem.get());
+	mAllRitems.push_back(std::move(skyRitem));
 
 	auto skullRitem = std::make_unique<RenderItem>();
     XMStoreFloat4x4(&skullRitem->World, XMMatrixScaling(0.4f, 0.4f, 0.4f)*XMMatrixTranslation(0.0f, 1.0f, 0.0f));
@@ -1102,7 +1144,7 @@ void ShapesApp::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::v
     {
         auto ri = ritems[i];
 
-		cmdList->SetGraphicsRootConstantBufferView(2, objectCB->GetGPUVirtualAddress() + ri->ObjCBIndex * objCBByteSize);
+		cmdList->SetGraphicsRootConstantBufferView(3, objectCB->GetGPUVirtualAddress() + ri->ObjCBIndex * objCBByteSize);
 
 		cmdList->IASetVertexBuffers(0, 1, &ri->Geo->VertexBufferView());
 		cmdList->IASetIndexBuffer(&ri->Geo->IndexBufferView());
