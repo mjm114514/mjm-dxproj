@@ -79,7 +79,6 @@ private:
 	void UpdateMaterialCB(const GameTimer& gt);
 	void UpdateReflectedPassCB(const GameTimer& gt);
 
-    void BuildDescriptorHeaps();
 	void BuildShaderResourceBufferViews();
     void BuildRootSignature();
     void BuildShadersAndInputLayout();
@@ -188,7 +187,6 @@ bool ShapesApp::Initialize()
 	mCam.SetPosition(0.0f, 2.0f, -15.0f);
 
 	LoadTextures();
-    BuildDescriptorHeaps();
 	BuildShaderResourceBufferViews();
     BuildRootSignature();
     BuildShadersAndInputLayout();
@@ -273,8 +271,7 @@ void ShapesApp::Draw(const GameTimer& gt)
 
 	mCommandList->SetGraphicsRootSignature(mRootSignature.Get());
 
-	CD3DX12_GPU_DESCRIPTOR_HANDLE texDescriptor(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-	mCommandList->SetGraphicsRootDescriptorTable(0, texDescriptor);
+	mCommandList->SetGraphicsRootDescriptorTable(0, mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
 	auto matBuffer = mCurrFrameResource->MaterialCB->Resource();
 	mCommandList->SetGraphicsRootShaderResourceView(1, matBuffer->GetGPUVirtualAddress());
@@ -395,14 +392,17 @@ void ShapesApp::UpdateMaterialCB(const GameTimer& gt) {
 	for (auto& e : mMaterials) {
 		Material* mat = e.second.get();
 		if (mat->NumFramesDirty > 0) {
-			MaterialConstants matConstants;
-			matConstants.DiffuseAlbedo = mat->DiffuseAlbedo;
-			matConstants.FresnelR0 = mat->FresnelR0;
-			matConstants.Roughness = mat->Roughness;
+			MaterialData matData;
+			matData.DiffuseAlbedo = mat->DiffuseAlbedo;
+			matData.FresnelR0 = mat->FresnelR0;
+			matData.Roughness = mat->Roughness;
 
-			matConstants.MatTransform = mat->MatTransform;
+			matData.MatTransform = mat->MatTransform;
+			matData.DiffuseMapIndex = mat->DiffuseSrvHeapIndex;
 
-			currMaterialCB->CopyData(mat->MatCBIndex, matConstants);
+			currMaterialCB->CopyData(mat->MatCBIndex, matData);
+
+			mat->NumFramesDirty--;
 		}
 	}
 }
@@ -455,18 +455,6 @@ void ShapesApp::UpdateReflectedPassCB(const GameTimer& gt){
 	}
 	auto currPassCB = mCurrFrameResource->PassCB.get();
 	currPassCB->CopyData(1, mReflectedPassCB);
-}
-
-void ShapesApp::BuildDescriptorHeaps()
-{
-	if (mTextures.size() > 0){
-		D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-		srvHeapDesc.NumDescriptors = (UINT)mTextures.size();
-		srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-		srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-		srvHeapDesc.NodeMask = 0;
-		ThrowIfFailed(md3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&mSrvDescriptorHeap)));
-	}
 }
 
 void ShapesApp::BuildShaderResourceBufferViews(){
@@ -994,7 +982,7 @@ void ShapesApp::BuildFrameResources()
 void ShapesApp::BuildRenderItems() {
 
 	auto skullRitem = std::make_unique<RenderItem>();
-	skullRitem->World = MathHelper::Identity4x4();
+    XMStoreFloat4x4(&skullRitem->World, XMMatrixScaling(0.4f, 0.4f, 0.4f)*XMMatrixTranslation(0.0f, 1.0f, 0.0f));
 	skullRitem->TexTransform = MathHelper::Identity4x4();
 	skullRitem->ObjCBIndex = 1;
 	skullRitem->Mat = mMaterials["skullMat"].get();
