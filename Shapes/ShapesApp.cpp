@@ -402,7 +402,8 @@ void ShapesApp::UpdateMaterialCB(const GameTimer& gt) {
 			matData.FresnelR0 = mat->FresnelR0;
 			matData.Roughness = mat->Roughness;
 
-			matData.MatTransform = mat->MatTransform;
+			XMMATRIX matTransform = XMLoadFloat4x4(&mat->MatTransform);
+			XMStoreFloat4x4(&matData.MatTransform, XMMatrixTranspose(matTransform));
 			matData.DiffuseMapIndex = mat->DiffuseSrvHeapIndex;
 
 			currMaterialCB->CopyData(mat->MatCBIndex, matData);
@@ -428,7 +429,7 @@ void ShapesApp::UpdateMainPassCB(const GameTimer& gt)
 	XMStoreFloat4x4(&mMainPassCB.InvProj, XMMatrixTranspose(invProj));
 	XMStoreFloat4x4(&mMainPassCB.ViewProj, XMMatrixTranspose(viewProj));
 	XMStoreFloat4x4(&mMainPassCB.InvViewProj, XMMatrixTranspose(invViewProj));
-	mMainPassCB.EyePosW = mEyePos;
+	mMainPassCB.EyePosW = mCam.GetPosition3f();
 	mMainPassCB.RenderTargetSize = XMFLOAT2((float)mClientWidth, (float)mClientHeight);
 	mMainPassCB.InvRenderTargetSize = XMFLOAT2(1.0f / mClientWidth, 1.0f / mClientHeight);
 	mMainPassCB.NearZ = 1.0f;
