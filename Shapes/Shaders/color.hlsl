@@ -52,7 +52,7 @@ VertexOut VS(VertexIn vin)
     float4 texC = mul(float4(vin.TexC, 0.0f, 1.0f), gTexTransform);
     vout.TexC = mul(texC, matData.MatTransform).xy;
 
-    vout.TangentW = mul(vin.TangentU, (float3x3) gInvTransWorld);
+    vout.TangentW = mul(vin.TangentU, (float3x3) gWorld);
 	
     return vout;
 }
