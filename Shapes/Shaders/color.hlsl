@@ -28,7 +28,8 @@ struct VertexOut
     float3 PosW : POSITION;
     float3 NormalW : NORMAL;
     float3 TangentW : TENGENT;
-    float2 TexC : TEXCOORD;
+    float2 TexC : TEXCOORD0;
+    float4 ProjTex : TEXCOORD1;
 };
 
 VertexOut VS(VertexIn vin)
@@ -53,7 +54,7 @@ VertexOut VS(VertexIn vin)
     vout.TexC = mul(texC, matData.MatTransform).xy;
 
     vout.TangentW = mul(vin.TangentU, (float3x3) gWorld);
-	
+
     return vout;
 }
 

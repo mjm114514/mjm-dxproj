@@ -4,6 +4,7 @@
 #include "../Common/GeometryGenerator.h"
 #include "../Common/Camera.h"
 #include "FrameResource.h"
+#include "ShadowMap.h"
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
@@ -73,6 +74,9 @@ private:
 	void UpdateObjectCBs(const GameTimer& gt);
 	void UpdateMainPassCB(const GameTimer& gt);
 	void UpdateMaterialCB(const GameTimer& gt);
+	void UpdateShadowTransform(const GameTimer& gt);
+	void UpdateShadowPassCB(const GameTimer& gt);
+
 	void UpdateReflectedPassCB(const GameTimer& gt);
 
 	void BuildShaderResourceBufferViews();
@@ -117,6 +121,17 @@ private:
 
     PassConstants mMainPassCB;
 	PassConstants mReflectedPassCB;
+
+	DirectX::BoundingSphere mSceneBounds;
+	std::unique_ptr<ShadowMap> mShadowMap;
+	float mLightRotationAngle = 0.0f;
+    XMFLOAT3 mBaseLightDirections[3] = {
+        XMFLOAT3(0.57735f, -0.57735f, 0.57735f),
+        XMFLOAT3(-0.57735f, -0.57735f, 0.57735f),
+        XMFLOAT3(0.0f, -0.707f, -0.707f)
+    };
+    XMFLOAT3 mRotatedLightDirections[3];
+	XMFLOAT3 mLightPosW;
 
     UINT mPassCbvOffset = 0;
 	UINT mMatCbvOffset = 0;
@@ -163,6 +178,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance,
 ShapesApp::ShapesApp(HINSTANCE hInstance)
     : D3DApp(hInstance)
 {
+    // Estimate the scene bounding sphere manually since we know how the scene was constructed.
+    // The grid is the "widest object" with a width of 20 and depth of 30.0f, and centered at
+    // the world space origin.  In general, you need to loop over every world space vertex
+    // position and compute the bounding sphere.
+    mSceneBounds.Center = XMFLOAT3(0.0f, 0.0f, 0.0f);
+    mSceneBounds.Radius = sqrtf(10.0f*10.0f + 15.0f*15.0f);
 }
 
 ShapesApp::~ShapesApp()
@@ -178,6 +199,8 @@ bool ShapesApp::Initialize()
 
     // Reset the command list to prep for initialization commands.
     ThrowIfFailed(mCommandList->Reset(mDirectCmdListAlloc.Get(), nullptr));
+
+	mShadowMap = std::make_unique<ShadowMap>(md3dDevice.Get(), 2048, 2048);
 
 	mCbvSrvUavDescriptorSize = md3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
@@ -232,9 +255,20 @@ void ShapesApp::Update(const GameTimer& gt)
         CloseHandle(eventHandle);
     }
 
+	mLightRotationAngle += 0.1f * gt.DeltaTime();
+
+	XMMATRIX R = XMMatrixRotationY(mLightRotationAngle);
+	for (int i = 0; i < 3; i++) {
+		XMVECTOR lightDir = XMLoadFloat3(&mBaseLightDirections[i]);
+		lightDir = XMVector3TransformNormal(lightDir, R);
+		XMStoreFloat3(&mRotatedLightDirections[i], lightDir);
+	}
+
 	UpdateObjectCBs(gt);
 	UpdateMaterialCB(gt);
+	UpdateShadowTransform(gt);
 	UpdateMainPassCB(gt);
+	UpdateShadowPassCB(gt);
 }
 
 void ShapesApp::Draw(const GameTimer& gt)
@@ -462,6 +496,20 @@ void ShapesApp::UpdateReflectedPassCB(const GameTimer& gt){
 	}
 	auto currPassCB = mCurrFrameResource->PassCB.get();
 	currPassCB->CopyData(1, mReflectedPassCB);
+}
+
+void ShapesApp::UpdateShadowTransform(const GameTimer& gt) {
+	// Only the first "main" light cast a shadow.
+	XMVECTOR lightDir = XMLoadFloat3(&mRotatedLightDirections[0]);
+	XMVECTOR lightPos = -2.0f * mSceneBounds.Radius * lightDir;
+	XMVECTOR targetPos = XMLoadFloat3(&mSceneBounds.Center);
+	XMVECTOR lightUp = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+	XMMATRIX lightView = XMMatrixLookAtLH(lightPos, targetPos, lightUp);
+
+	XMStoreFloat3(&mLightPosW, lightPos);
+
+	// Transform bounding sphere to light space.
+	XMFLOAT3 sphereCenterLS;
 }
 
 void ShapesApp::BuildShaderResourceBufferViews(){
