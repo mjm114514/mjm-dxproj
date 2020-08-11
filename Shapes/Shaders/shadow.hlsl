@@ -8,7 +8,7 @@ struct VertexIn
 
 struct VertexOut
 {
-    float3 PosH : SV_Position;
+    float4 PosH : SV_Position;
     float2 TexC : TEXCOORD;
 };
 

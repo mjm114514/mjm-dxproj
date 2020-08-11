@@ -26,11 +26,10 @@ struct VertexOut
 {
     float4 PosH : SV_POSITION;
     float4 ShadowPosH : POSITION0;
-    float3 PosW : POSITION;
+    float3 PosW : POSITION1;
     float3 NormalW : NORMAL;
     float3 TangentW : TENGENT;
     float2 TexC : TEXCOORD0;
-    float4 ProjTex : TEXCOORD1;
 };
 
 VertexOut VS(VertexIn vin)
@@ -89,7 +88,7 @@ float4 PS(VertexOut pin) : SV_Target
     Material mat = { diffuseAlbedo, fresnelR0, shininess };
     float3 shadowFactor = float3(1.0f, 1.0f, 1.0f);
 
-    shadowFactor.x = CalcShadowFactor(pin.ShadowPosH);
+    shadowFactor[0] = CalcShadowFactor(pin.ShadowPosH);
 
     float4 directLight = computeLighting(gLights, mat, pin.PosW,
         bumpedNormalW, toEyeW, shadowFactor);
