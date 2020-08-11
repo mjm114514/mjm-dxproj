@@ -26,7 +26,7 @@ VertexOut VS(VertexIn vin)
 
     // Output vertex attributes for interpolation across triangle.
     float4 texC = mul(float4(vin.TeXC, 0.0f, 1.0f), gTexTransform);
-    vout.TexC = mul(texc, matData.MatTransform).xy;
+    vout.TexC = mul(texC, matData.MatTransform).xy;
 
     return vout;
 }

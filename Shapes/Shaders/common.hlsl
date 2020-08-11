@@ -27,7 +27,7 @@ struct MaterialData
 };
 
 TextureCube gCubeMap : register(t0);
-Texture2D shadowMap : register(t1);
+Texture2D gShadowMap : register(t1);
 
 // An array of textures, which is only supported in shader model 5.1+.  Unlike Texture2DArray, the textures
 // in this array can be different sizes and formats, making it more flexible than texture arrays.
@@ -43,6 +43,7 @@ SamplerState gsamLinearWrap       : register(s2);
 SamplerState gsamLinearClamp      : register(s3);
 SamplerState gsamAnisotropicWrap  : register(s4);
 SamplerState gsamAnisotropicClamp : register(s5);
+SamplerComparisonState gsamShadow : register(s6);
 
 // Constant data that varies per frame.
 cbuffer cbPerObject : register(b0)
@@ -65,6 +66,7 @@ cbuffer cbPass : register(b1)
     float4x4 gInvProj;
     float4x4 gViewProj;
     float4x4 gInvViewProj;
+    float4x4 gShadowTransform;
     float3 gEyePosW;
     float cbPerObjectPad1;
     float2 gRenderTargetSize;
@@ -98,4 +100,26 @@ float3 NormalSampleToWorldSpace(float3 normalMapSample, float3 unitNormalW, floa
     float3 bumpedNormalW = mul(normalT, TBN);
 
     return bumpedNormalW;
+}
+
+float CalcShadowFactor(float4 shadowPosH)
+{
+    // Complete projection by doing division by w.
+    shadowPosH.xyz /= shadowPosH.w;
+
+    // Depth in NDC space.
+    float depth = shadowPosH.z;
+
+    uint width, height, numMips;
+    
+    gShadowMap.GetDimensions(0, width, height, numMips);
+
+    // Texel size
+    float dx = 1.0f / (float) width;
+
+    float perentLit = 0;
+    perentLit += gShadowMap.SampleCmpLevelZero(gsamShadow, shadowPosH.xy, depth).r;
+
+    return perentLit;
+
 }
