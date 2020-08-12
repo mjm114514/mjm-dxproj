@@ -414,7 +414,7 @@ void ShapesApp::DrawSceneToShadowMap() {
 	// Bind the pass constant buffer for the shadow map pass;
 	auto passCB = mCurrFrameResource->PassCB->Resource();
 	D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = passCB->GetGPUVirtualAddress() + 1 * passCBByteSize;
-	mCommandList->SetGraphicsRootConstantBufferView(1, passCBAddress);
+	mCommandList->SetGraphicsRootConstantBufferView(4, passCBAddress);
 	mCommandList->SetPipelineState(mPSOs["shadow_opaque"].Get());
 	DrawRenderItems(mCommandList.Get(), mRitemLayer[( int )RenderLayer::Opaque]);
 
@@ -922,7 +922,7 @@ void ShapesApp::BuildSkull() {
 
 	if (!fin)
 	{
-		MessageBox(0, L"Models/skull.txt not found.", 0, 0);
+		MessageBox(0, L"../Models/skull.txt not found.", 0, 0);
 		return;
 	}
 
@@ -946,24 +946,28 @@ void ShapesApp::BuildSkull() {
 		fin >> vertices[i].Pos.x >> vertices[i].Pos.y >> vertices[i].Pos.z;
 		fin >> vertices[i].Normal.x >> vertices[i].Normal.y >> vertices[i].Normal.z;
 
+		vertices[i].TexC = { 0.0f, 0.0f };
+
 		XMVECTOR P = XMLoadFloat3(&vertices[i].Pos);
 
-		// Project point onto unit sphere and generate spherical texture coordinates.
-		XMFLOAT3 spherePos;
-		XMStoreFloat3(&spherePos, XMVector3Normalize(P));
+		XMVECTOR N = XMLoadFloat3(&vertices[i].Normal);
 
-		float theta = atan2f(spherePos.z, spherePos.x);
+		// Generate a tangent vector so normal mapping works.  We aren't applying
+		// a texture map to the skull, so we just need any tangent vector so that
+		// the math works out to give us the original interpolated vertex normal.
+		XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+		if (fabsf(XMVectorGetX(XMVector3Dot(N, up))) < 1.0f - 0.001f)
+		{
+			XMVECTOR T = XMVector3Normalize(XMVector3Cross(up, N));
+			XMStoreFloat3(&vertices[i].TangentU, T);
+		}
+		else
+		{
+			up = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+			XMVECTOR T = XMVector3Normalize(XMVector3Cross(N, up));
+			XMStoreFloat3(&vertices[i].TangentU, T);
+		}
 
-		// Put in [0, 2pi].
-		if (theta < 0.0f)
-			theta += XM_2PI;
-
-		float phi = acosf(spherePos.y);
-
-		float u = theta / (2.0f * XM_PI);
-		float v = phi / XM_PI;
-
-		vertices[i].TexC = { u, v };
 
 		vMin = XMVectorMin(vMin, P);
 		vMax = XMVectorMax(vMax, P);
@@ -977,7 +981,7 @@ void ShapesApp::BuildSkull() {
 	fin >> ignore;
 	fin >> ignore;
 
-	std::vector<std::uint32_t> indices(3 * tcount);
+	std::vector<std::int32_t> indices(3 * tcount);
 	for (UINT i = 0; i < tcount; ++i)
 	{
 		fin >> indices[i * 3 + 0] >> indices[i * 3 + 1] >> indices[i * 3 + 2];
@@ -989,9 +993,9 @@ void ShapesApp::BuildSkull() {
 	// Pack the indices of all the meshes into one index buffer.
 	//
 
-	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
+	const UINT vbByteSize = ( UINT )vertices.size() * sizeof(Vertex);
 
-	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint32_t);
+	const UINT ibByteSize = ( UINT )indices.size() * sizeof(std::int32_t);
 
 	auto geo = std::make_unique<MeshGeometry>();
 	geo->Name = "skull";
@@ -1014,7 +1018,7 @@ void ShapesApp::BuildSkull() {
 	geo->IndexBufferByteSize = ibByteSize;
 
 	SubmeshGeometry submesh;
-	submesh.IndexCount = (UINT)indices.size();
+	submesh.IndexCount = ( UINT )indices.size();
 	submesh.StartIndexLocation = 0;
 	submesh.BaseVertexLocation = 0;
 	submesh.Bounds = bounds;
