@@ -95,8 +95,6 @@ private:
 	void LoadTextures();
 	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 7> GetStaticSamplers();
     void DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritems);
-
-	void Pick(int sx, int sy);
  
 private:
 

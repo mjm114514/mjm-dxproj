@@ -113,13 +113,23 @@ float CalcShadowFactor(float4 shadowPosH)
     uint width, height, numMips;
     
     gShadowMap.GetDimensions(0, width, height, numMips);
-
+	
     // Texel size
-    float dx = 1.0f / (float) width;
+    float dx = 1.0f / width;
+
+    float2 offsets[9] =
+    {
+        float2(-dx, -dx), float2(0.0f, -dx), float2(dx, -dx),
+        float2(-dx, 0.0f), float2(0.0f, 0.0f), float2(dx, 0.0f),
+        float2(-dx, dx), float2(0.0f, dx), float2(dx, dx),
+    };
 
     float perentLit = 0;
-    perentLit += gShadowMap.SampleCmpLevelZero(gsamShadow, shadowPosH.xy, depth).r;
+    [unroll]
+    for (int i = 0; i < 9; i++)
+    {
+        perentLit += gShadowMap.SampleCmpLevelZero(gsamShadow, shadowPosH.xy + offsets[i], depth).r;
+    }
 
-    return perentLit;
-
+    return perentLit / 9.0f;
 }
