@@ -102,6 +102,8 @@ float3 NormalSampleToWorldSpace(float3 normalMapSample, float3 unitNormalW, floa
     return bumpedNormalW;
 }
 
+// PCF for shadow mapping
+
 float CalcShadowFactor(float4 shadowPosH)
 {
     // Complete projection by doing division by w.

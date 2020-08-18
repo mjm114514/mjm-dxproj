@@ -5,6 +5,7 @@
 #include "../Common/Camera.h"
 #include "FrameResource.h"
 #include "ShadowMap.h"
+#include "Ssao.h"
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
@@ -126,6 +127,9 @@ private:
 	PassConstants mShadowPassCB;
 
 	DirectX::BoundingSphere mSceneBounds;
+
+	std::unique_ptr<Ssao> mSsao;
+
 	std::unique_ptr<ShadowMap> mShadowMap;
 	float mLightRotationAngle = 0.0f;
     XMFLOAT3 mBaseLightDirections[3] = {
