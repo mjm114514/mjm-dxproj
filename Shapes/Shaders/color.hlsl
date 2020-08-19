@@ -26,10 +26,12 @@ struct VertexOut
 {
     float4 PosH : SV_POSITION;
     float4 ShadowPosH : POSITION0;
-    float3 PosW : POSITION1;
+    float4 SsaoPosH : POSITION1;
+    float3 PosW : POSITION2;
     float3 NormalW : NORMAL;
-    float3 TangentW : TENGENT;
-    float2 TexC : TEXCOORD0;
+    float3 TangentW : TANGENT;
+    float2 TexC : TEXCOORD;
+
 };
 
 VertexOut VS(VertexIn vin)
@@ -44,19 +46,25 @@ VertexOut VS(VertexIn vin)
     vout.PosW = posW.xyz;
 
     // Assumes nonuniform scaling; otherwise, need to use inverse-transpose of world matrix.
-    vout.NormalW = mul(vin.NormalL, (float3x3) gInvTransWorld);
+    vout.NormalW = mul(vin.NormalL, (float3x3) gWorld);
+	
+    vout.TangentW = mul(vin.TangentU, (float3x3) gWorld);
 
     // Transform to homogeneous clip space.
     vout.PosH = mul(posW, gViewProj);
+
+    // Generate projective tex-coords to project SSAO map onto scene.
+    vout.SsaoPosH = mul(posW, gViewProjTex);
 	
 	// Output vertex attributes for interpolation across triangle.
     float4 texC = mul(float4(vin.TexC, 0.0f, 1.0f), gTexTransform);
     vout.TexC = mul(texC, matData.MatTransform).xy;
 
-    vout.TangentW = mul(vin.TangentU, (float3x3) gWorld);
+    // Generate projective tex-coords to project shadow map onto scene.
     vout.ShadowPosH = mul(posW, gShadowTransform);
-
+	
     return vout;
+
 }
 
 float4 PS(VertexOut pin) : SV_Target
@@ -66,30 +74,44 @@ float4 PS(VertexOut pin) : SV_Target
     float4 diffuseAlbedo = matData.DiffuseAlbedo;
     float3 fresnelR0 = matData.FresnelR0;
     float roughness = matData.Roughness;
-    uint diffuseTexIndex = matData.DiffuseMapIndex;
+    uint diffuseMapIndex = matData.DiffuseMapIndex;
     uint normalMapIndex = matData.NormalMapIndex;
-
-	// Dynamically look up the texture in the array.
-    diffuseAlbedo *= gTextureMaps[diffuseTexIndex].Sample(gsamAnisotropicWrap, pin.TexC);
 	
-    // Interpolating normal can unnormalize it, so renormalize it.
-    pin.NormalW = normalize(pin.NormalW);
+    // Dynamically look up the texture in the array.
+    diffuseAlbedo *= gTextureMaps[diffuseMapIndex].Sample(gsamAnisotropicWrap, pin.TexC);
 
+#ifdef ALPHA_TEST
+    // Discard pixel if texture alpha < 0.1.  We do this test as soon 
+    // as possible in the shader so that we can potentially exit the
+    // shader early, thereby skipping the rest of the shader code.
+    clip(diffuseAlbedo.a - 0.1f);
+#endif
+
+	// Interpolating normal can unnormalize it, so renormalize it.
+    pin.NormalW = normalize(pin.NormalW);
+	
     float4 normalMapSample = gTextureMaps[normalMapIndex].Sample(gsamAnisotropicWrap, pin.TexC);
-    float3 bumpedNormalW = NormalSampleToWorldSpace(normalMapSample.xyz, pin.NormalW, pin.TangentW);
+    float3 bumpedNormalW = NormalSampleToWorldSpace(normalMapSample.rgb, pin.NormalW, pin.TangentW);
+
+	// Uncomment to turn off normal mapping.
+    //bumpedNormalW = pin.NormalW;
 
     // Vector from point being lit to eye. 
     float3 toEyeW = normalize(gEyePosW - pin.PosW);
 
+    // Finish texture projection and sample SSAO map.
+    pin.SsaoPosH /= pin.SsaoPosH.w;
+    float ambientAccess = gSSAOMap.Sample(gsamLinearClamp, pin.SsaoPosH.xy, 0.0f).r;
+
     // Light terms.
-    float4 ambient = gAmbientLight * diffuseAlbedo;
+    float4 ambient = ambientAccess * gAmbientLight * diffuseAlbedo;
+
+    // Only the first light casts a shadow.
+    float3 shadowFactor = float3(1.0f, 1.0f, 1.0f);
+    shadowFactor[0] = CalcShadowFactor(pin.ShadowPosH);
 
     const float shininess = (1.0f - roughness) * normalMapSample.a;
     Material mat = { diffuseAlbedo, fresnelR0, shininess };
-    float3 shadowFactor = float3(1.0f, 1.0f, 1.0f);
-
-    shadowFactor[0] = CalcShadowFactor(pin.ShadowPosH);
-
     float4 directLight = computeLighting(gLights, mat, pin.PosW,
         bumpedNormalW, toEyeW, shadowFactor);
 
@@ -97,14 +119,15 @@ float4 PS(VertexOut pin) : SV_Target
 
 	// Add in specular reflections.
     float3 r = reflect(-toEyeW, bumpedNormalW);
-    float4 reflectionColor = gCubeMap.Sample(gsamAnisotropicWrap, r);
+    float4 reflectionColor = gCubeMap.Sample(gsamLinearWrap, r);
     float3 fresnelFactor = schlickFresnel(fresnelR0, bumpedNormalW, r);
     litColor.rgb += shininess * fresnelFactor * reflectionColor.rgb;
-
+	
     // Common convention to take alpha from diffuse albedo.
     litColor.a = diffuseAlbedo.a;
 
     return litColor;
+
 }
 
 
