@@ -241,6 +241,8 @@ bool ShapesApp::Initialize()
     BuildFrameResources();
     BuildPSOs();
 
+	mSsao->SetPSOs(mPSOs["ssao"].Get(), mPSOs["ssaoBlur"].Get());
+
     // Execute the initialization commands.
     ThrowIfFailed(mCommandList->Close());
     ID3D12CommandList* cmdsLists[] = { mCommandList.Get() };
@@ -348,6 +350,10 @@ void ShapesApp::Draw(const GameTimer& gt)
 	mCommandList->SetGraphicsRootSignature(mSsaoRootSignature.Get());
 	mSsao->ComputeSsao(mCommandList.Get(), mCurrFrameResource, 3);
 
+
+	// Main Pass
+	mCommandList->SetGraphicsRootSignature(mRootSignature.Get());
+
     mCommandList->RSSetViewports(1, &mScreenViewport);
     mCommandList->RSSetScissorRects(1, &mScissorRect);
 
@@ -368,6 +374,7 @@ void ShapesApp::Draw(const GameTimer& gt)
 	mCommandList->SetGraphicsRootDescriptorTable(0, skyTexHandle);
 
 	mCommandList->SetGraphicsRootDescriptorTable(1, mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+	mCommandList->SetGraphicsRootShaderResourceView(2, matBuffer->GetGPUVirtualAddress());
 
 	auto passCB = mCurrFrameResource->PassCB->Resource();
 	mCommandList->SetGraphicsRootConstantBufferView(4, passCB->GetGPUVirtualAddress());
@@ -832,7 +839,7 @@ void ShapesApp::BuildDescriptorHeaps(){
 		mDepthStencilBuffer.Get(),
 		CD3DX12_CPU_DESCRIPTOR_HANDLE(srvCpuStart, mSsaoHeapIndexStart, mCbvSrvUavDescriptorSize),
 		CD3DX12_GPU_DESCRIPTOR_HANDLE(srvGpuStart, mSsaoHeapIndexStart, mCbvSrvUavDescriptorSize),
-		CD3DX12_CPU_DESCRIPTOR_HANDLE(rtvCpuStart, SwapChainBufferCount, mCbvSrvUavDescriptorSize),
+		CD3DX12_CPU_DESCRIPTOR_HANDLE(rtvCpuStart, SwapChainBufferCount, mRtvDescriptorSize),
 		mCbvSrvUavDescriptorSize,
 		mRtvDescriptorSize
 	);
