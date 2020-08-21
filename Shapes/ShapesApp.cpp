@@ -350,8 +350,8 @@ void ShapesApp::Draw(const GameTimer& gt)
 	mCommandList->SetGraphicsRootSignature(mSsaoRootSignature.Get());
 	mSsao->ComputeSsao(mCommandList.Get(), mCurrFrameResource, 3);
 
+	// Main Draw Pass
 
-	// Main Pass
 	mCommandList->SetGraphicsRootSignature(mRootSignature.Get());
 
     mCommandList->RSSetViewports(1, &mScreenViewport);
@@ -363,11 +363,11 @@ void ShapesApp::Draw(const GameTimer& gt)
 
     // Clear the back buffer and depth buffer.
     mCommandList->ClearRenderTargetView(CurrentBackBufferView(), Colors::LightSteelBlue, 0, nullptr);
-    mCommandList->ClearDepthStencilView(DepthStencilView(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
 
     // Specify the buffers we are going to render to.
     mCommandList->OMSetRenderTargets(1, &CurrentBackBufferView(), true, &DepthStencilView());
 
+	mCommandList->SetGraphicsRootShaderResourceView(2, matBuffer->GetGPUVirtualAddress());
 
 	CD3DX12_GPU_DESCRIPTOR_HANDLE skyTexHandle(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 	skyTexHandle.Offset(mSkyTexHeapIndex, mCbvSrvUavDescriptorSize);
@@ -382,11 +382,11 @@ void ShapesApp::Draw(const GameTimer& gt)
 	mCommandList->SetPipelineState(mPSOs["opaque"].Get());
     DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
 
-	mCommandList->SetPipelineState(mPSOs["sky"].Get());
-	DrawRenderItems(mCommandList.Get(), mRitemLayer[( int )RenderLayer::Sky]);
-
 	mCommandList->SetPipelineState(mPSOs["debug"].Get());
 	DrawRenderItems(mCommandList.Get(), mRitemLayer[( int )RenderLayer::Debug]);
+
+	mCommandList->SetPipelineState(mPSOs["sky"].Get());
+	DrawRenderItems(mCommandList.Get(), mRitemLayer[( int )RenderLayer::Sky]);
 
     // Indicate a state transition on the resource usage.
 	mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(CurrentBackBuffer(),
@@ -472,7 +472,7 @@ void ShapesApp::DrawNormalsAndDepth() {
 
     // Bind the constant buffer for this pass.
     auto passCB = mCurrFrameResource->PassCB->Resource();
-    mCommandList->SetGraphicsRootConstantBufferView(1, passCB->GetGPUVirtualAddress());
+    mCommandList->SetGraphicsRootConstantBufferView(4, passCB->GetGPUVirtualAddress());
 
     mCommandList->SetPipelineState(mPSOs["drawNormals"].Get());
 
@@ -998,6 +998,9 @@ void ShapesApp::BuildShadersAndInputLayout()
 	mShaders["skyVS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", nullptr, "VS", "vs_5_1");
 	mShaders["skyPS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", nullptr, "PS", "ps_5_1");
 
+	mShaders["testVS"] = d3dUtil::CompileShader(L"Shaders\\test.hlsl", nullptr, "VS", "vs_5_1");
+	mShaders["testPS"] = d3dUtil::CompileShader(L"Shaders\\test.hlsl", nullptr, "PS", "ps_5_1");
+
 	mInputLayout =
 	{
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
@@ -1466,6 +1469,19 @@ void ShapesApp::BuildPSOs()
     opaquePsoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_EQUAL;
     opaquePsoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
     ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&opaquePsoDesc, IID_PPV_ARGS(&mPSOs["opaque"])));
+
+	// debug pso
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC testPsoDesc = basePsoDesc;
+	testPsoDesc.VS = {
+		reinterpret_cast< BYTE* >(mShaders["testVS"]->GetBufferPointer()),
+		mShaders["testVS"]->GetBufferSize()
+	};
+	testPsoDesc.PS = {
+		reinterpret_cast< BYTE* >(mShaders["testPS"]->GetBufferPointer()),
+		mShaders["testPS"]->GetBufferSize()
+	};
+	ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&testPsoDesc, IID_PPV_ARGS(&mPSOs["test"])));
 
     //
     // PSO for shadow map pass.
