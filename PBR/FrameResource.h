@@ -7,11 +7,19 @@
 struct ObjectConstants
 {
     DirectX::XMFLOAT4X4 World = MathHelper::Identity4x4();
+	DirectX::XMFLOAT4X4 InvTransWorld = MathHelper::Identity4x4();
 	DirectX::XMFLOAT4X4 TexTransform = MathHelper::Identity4x4();
 	UINT     MaterialIndex;
 	UINT     ObjPad0;
 	UINT     ObjPad1;
 	UINT     ObjPad2;
+};
+
+struct LightObject {
+	DirectX::XMFLOAT3 LightPos;
+	float padding0;
+	DirectX::XMFLOAT3 LightColor;
+	float padding1;
 };
 
 struct PassConstants
@@ -37,7 +45,7 @@ struct PassConstants
     // indices [NUM_DIR_LIGHTS, NUM_DIR_LIGHTS+NUM_POINT_LIGHTS) are point lights;
     // indices [NUM_DIR_LIGHTS+NUM_POINT_LIGHTS, NUM_DIR_LIGHTS+NUM_POINT_LIGHT+NUM_SPOT_LIGHTS)
     // are spot lights for a maximum of MaxLights per object.
-    Light Lights[MaxLights];
+	LightObject Lights[MaxLights];
 };
 
 struct MaterialData

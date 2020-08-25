@@ -47,7 +47,7 @@ VertexOut VS(VertexIn vin)
     vout.PosW = posW.xyz;
 
     // Assumes nonuniform scaling; otherwise, need to use inverse-transpose of world matrix.
-    vout.NormalW = mul(vin.NormalL, (float3x3)gWorld);
+    vout.NormalW = mul(vin.NormalL, (float3x3)gInvTransWorld);
 	
 	vout.TangentW = mul(vin.TangentU, (float3x3)gWorld);
 
