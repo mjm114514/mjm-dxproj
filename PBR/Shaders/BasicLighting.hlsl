@@ -24,6 +24,7 @@ struct VertexOut
 {
     float4 PosH : SV_POSITION;
     float3 PosW : POSITIONT;
+    float3 NormalW : NORMAL;
 };
 
 VertexOut VS(VertexIn vin)
@@ -34,18 +35,37 @@ VertexOut VS(VertexIn vin)
     
     vout.PosH = mul(posW, gViewProj);
     vout.PosW = posW.xyz;
+    vout.NormalW = mul(vin.NormalL, (float3x3) gInvTransWorld);
 
     return vout;
 };
 
 float4 PS(VertexOut pin) : SV_Target
 {
+
+    // calculate diffuse light
+    float3 normal = normalize(pin.NormalW);
+    float3 lightDir = normalize(gLights[0].lightPos - pin.PosW);
+
+    float diff = max(dot(normal, lightDir), 0.0f);
+
+    float3 diffuseLight = diff * gLights[0].lightColor;
+
+    // calculate ambient light
     float ambientStrength = 0.1;
     float3 ambientLight = gLights[0].lightColor * ambientStrength;
 
     float4 diffuseAlbedo = gMaterialData[gMaterialIndex].DiffuseAlbedo;
 
-    float3 result = ambientLight * diffuseAlbedo.rgb;
+    // calculate specular light
+    float specularStrength = 0.5;
+    float3 toEye = normalize(gEyePosW - pin.PosW);
+    float3 reflectDir = reflect(-lightDir, normal);
+
+    float spec = pow(max(dot(toEye, reflectDir), 0.0f), 32);
+    float3 specular = specularStrength * spec * gLights[0].lightColor;
+
+    float3 result = (ambientLight + diffuseLight + specular) * diffuseAlbedo.rgb;
 
     return float4(result, diffuseAlbedo.a);
 }
