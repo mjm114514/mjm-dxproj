@@ -143,9 +143,13 @@
     <ClCompile Include="..\Common\d3dApp.cpp" />
     <ClCompile Include="..\Common\d3dUtil.cpp" />
     <ClCompile Include="..\Common\DDSTextureLoader.cpp" />
+    <ClCompile Include="..\Common\DirectXHelpers.cpp" />
     <ClCompile Include="..\Common\GameTimer.cpp" />
     <ClCompile Include="..\Common\GeometryGenerator.cpp" />
+    <ClCompile Include="..\Common\GraphicsMemory.cpp" />
     <ClCompile Include="..\Common\MathHelper.cpp" />
+    <ClCompile Include="..\Common\ResourceUploadBatch.cpp" />
+    <ClCompile Include="..\Common\WICTextureLoader.cpp" />
     <ClCompile Include="FrameResource.cpp" />
     <ClCompile Include="PBR.cpp" />
   </ItemGroup>
@@ -154,11 +158,19 @@
     <ClInclude Include="..\Common\d3dApp.h" />
     <ClInclude Include="..\Common\d3dUtil.h" />
     <ClInclude Include="..\Common\d3dx12.h" />
+    <ClInclude Include="..\Common\DDS.h" />
     <ClInclude Include="..\Common\DDSTextureLoader.h" />
+    <ClInclude Include="..\Common\DirectXHelpers.h" />
     <ClInclude Include="..\Common\GameTimer.h" />
     <ClInclude Include="..\Common\GeometryGenerator.h" />
+    <ClInclude Include="..\Common\GraphicsMemory.h" />
+    <ClInclude Include="..\Common\LoaderHelpers.h" />
     <ClInclude Include="..\Common\MathHelper.h" />
+    <ClInclude Include="..\Common\pch.h" />
+    <ClInclude Include="..\Common\PlatformHelpers.h" />
+    <ClInclude Include="..\Common\ResourceUploadBatch.h" />
     <ClInclude Include="..\Common\UploadBuffer.h" />
+    <ClInclude Include="..\Common\WICTextureLoader.h" />
     <ClInclude Include="FrameResource.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

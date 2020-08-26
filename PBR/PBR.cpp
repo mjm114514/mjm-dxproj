@@ -475,7 +475,7 @@ void PBR::LoadTextures()
 			texMap->Resource, texMap->UploadHeap));
 			
 		mTextures[texMap->Name] = std::move(texMap);
-	}		
+	}
 }
 
 void PBR::BuildRootSignature()
