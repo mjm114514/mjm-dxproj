@@ -464,18 +464,27 @@ void PBR::LoadTextures()
 		L"../Textures/default_nmap.dds",
 		L"../Textures/snowcube1024.dds"
 	};
+
+	ResourceUploadBatch resUpload(md3dDevice.Get());
+	resUpload.Begin();
 	
 	for(int i = 0; i < (int)texNames.size(); ++i)
 	{
 		auto texMap = std::make_unique<Texture>();
 		texMap->Name = texNames[i];
 		texMap->Filename = texFilenames[i];
-		ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(md3dDevice.Get(),
-			mCommandList.Get(), texMap->Filename.c_str(),
-			texMap->Resource, texMap->UploadHeap));
-			
+		ThrowIfFailed(CreateDDSTextureFromFile(
+			md3dDevice.Get(),
+			resUpload,
+			texMap->Filename.c_str(),
+			texMap->Resource.ReleaseAndGetAddressOf()
+		));
 		mTextures[texMap->Name] = std::move(texMap);
 	}
+
+	auto uploadResourceFinished = resUpload.End(mCommandQueue.Get());
+
+	uploadResourceFinished.wait();
 }
 
 void PBR::BuildRootSignature()

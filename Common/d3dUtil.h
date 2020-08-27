@@ -26,8 +26,8 @@
 #include <sstream>
 #include <cassert>
 #include "d3dx12.h"
-#include "DDSTextureLoader.h"
-#include "WICTextureLoader.h"
+#include <DDSTextureLoader.h>
+#include <ResourceUploadBatch.h>
 #include "MathHelper.h"
 
 extern const int gNumFrameResources;
