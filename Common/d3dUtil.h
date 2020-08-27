@@ -28,6 +28,7 @@
 #include "d3dx12.h"
 #include <DDSTextureLoader.h>
 #include <ResourceUploadBatch.h>
+#include <WICTextureLoader.h>
 #include "MathHelper.h"
 
 extern const int gNumFrameResources;

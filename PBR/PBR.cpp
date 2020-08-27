@@ -435,7 +435,7 @@ void PBR::UpdateMainPassCB(const GameTimer& gt)
 	mMainPassCB.TotalTime = gt.TotalTime();
 	mMainPassCB.DeltaTime = gt.DeltaTime();
 	mMainPassCB.AmbientLight = { 0.25f, 0.25f, 0.35f, 1.0f };
-	mMainPassCB.Lights[0].LightPos = { 1.2f, 1.0f, -3.0f };
+	mMainPassCB.Lights[0].LightPos = { 4.0f, 4.0f, -3.0f };
 	mMainPassCB.Lights[0].LightColor = { 1.0f, 1.0f, 1.0f };
 	auto currPassCB = mCurrFrameResource->PassCB.get();
 	currPassCB->CopyData(0, mMainPassCB);
@@ -445,24 +445,12 @@ void PBR::LoadTextures()
 {
 	std::vector<std::string> texNames = 
 	{
-		"bricksDiffuseMap",
-		"bricksNormalMap",
-		"tileDiffuseMap",
-		"tileNormalMap",
-		"defaultDiffuseMap",
-		"defaultNormalMap",
-		"skyCubeMap"
+		"woodMap"
 	};
 	
 	std::vector<std::wstring> texFilenames = 
 	{
-		L"../Textures/bricks2.dds",
-		L"../Textures/bricks2_nmap.dds",
-		L"../Textures/tile.dds",
-		L"../Textures/tile_nmap.dds",
-		L"../Textures/white1x1.dds",
-		L"../Textures/default_nmap.dds",
-		L"../Textures/snowcube1024.dds"
+		L"../textures-nondds/wood.png",
 	};
 
 	ResourceUploadBatch resUpload(md3dDevice.Get());
@@ -473,11 +461,12 @@ void PBR::LoadTextures()
 		auto texMap = std::make_unique<Texture>();
 		texMap->Name = texNames[i];
 		texMap->Filename = texFilenames[i];
-		ThrowIfFailed(CreateDDSTextureFromFile(
+		ThrowIfFailed(CreateWICTextureFromFile(
 			md3dDevice.Get(),
 			resUpload,
 			texMap->Filename.c_str(),
-			texMap->Resource.ReleaseAndGetAddressOf()
+			texMap->Resource.ReleaseAndGetAddressOf(),
+			true
 		));
 		mTextures[texMap->Name] = std::move(texMap);
 	}
@@ -550,16 +539,9 @@ void PBR::BuildDescriptorHeaps()
 
 	std::vector<ComPtr<ID3D12Resource>> tex2DList = 
 	{
-		mTextures["bricksDiffuseMap"]->Resource,
-		mTextures["bricksNormalMap"]->Resource,
-		mTextures["tileDiffuseMap"]->Resource,
-		mTextures["tileNormalMap"]->Resource,
-		mTextures["defaultDiffuseMap"]->Resource,
-		mTextures["defaultNormalMap"]->Resource
+		mTextures["woodMap"]->Resource,
 	};
 	
-	auto skyCubeMap = mTextures["skyCubeMap"]->Resource;
-
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
@@ -575,15 +557,6 @@ void PBR::BuildDescriptorHeaps()
 		// next descriptor
 		hDescriptor.Offset(1, mCbvSrvDescriptorSize);
 	}
-	
-	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
-	srvDesc.TextureCube.MostDetailedMip = 0;
-	srvDesc.TextureCube.MipLevels = skyCubeMap->GetDesc().MipLevels;
-	srvDesc.TextureCube.ResourceMinLODClamp = 0.0f;
-	srvDesc.Format = skyCubeMap->GetDesc().Format;
-	md3dDevice->CreateShaderResourceView(skyCubeMap.Get(), &srvDesc, hDescriptor);
-	
-	mSkyTexHeapIndex = (UINT)tex2DList.size();
 }
 
 void PBR::BuildShadersAndInputLayout()
@@ -876,7 +849,7 @@ void PBR::BuildRenderItems()
 	mAllRitems.push_back(std::move(skyRitem));
 
 	auto boxRitem = std::make_unique<RenderItem>();
-	XMStoreFloat4x4(&boxRitem->World, XMMatrixScaling(2.0f, 2.0f, 2.0f)*XMMatrixTranslation(0.0f, 0.5f, 0.0f));
+	XMStoreFloat4x4(&boxRitem->World, XMMatrixScaling(2.0f, 2.0f, 2.0f)*XMMatrixTranslation(0.0f, 0.0f, 0.0f));
 	XMStoreFloat4x4(&boxRitem->TexTransform, XMMatrixScaling(1.0f, 0.5f, 1.0f));
 	boxRitem->ObjCBIndex = 1;
 	boxRitem->Mat = mMaterials["cube"].get();
