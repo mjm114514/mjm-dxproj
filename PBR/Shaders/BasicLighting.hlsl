@@ -25,6 +25,7 @@ struct VertexOut
     float4 PosH : SV_POSITION;
     float3 PosW : POSITIONT;
     float3 NormalW : NORMAL;
+    float2 TexC : TEXCOORD;
 };
 
 VertexOut VS(VertexIn vin)
@@ -37,12 +38,13 @@ VertexOut VS(VertexIn vin)
     vout.PosW = posW.xyz;
     vout.NormalW = mul(vin.NormalL, (float3x3) gInvTransWorld);
 
+    vout.TexC = vin.TexC;
+
     return vout;
 };
 
 float4 PS(VertexOut pin) : SV_Target
 {
-
     // calculate diffuse light
     float3 normal = normalize(pin.NormalW);
     float3 lightDir = normalize(gLights[0].lightPos - pin.PosW);
@@ -56,6 +58,10 @@ float4 PS(VertexOut pin) : SV_Target
     float3 ambientLight = gLights[0].lightColor * ambientStrength;
 
     float4 diffuseAlbedo = gMaterialData[gMaterialIndex].DiffuseAlbedo;
+
+    int textureIndex = gMaterialData[gMaterialIndex].DiffuseMapIndex;
+
+    diffuseAlbedo *= gTextureMaps[textureIndex].Sample(gsamAnisotropicWrap, pin.TexC);
 
     // calculate specular light
     float specularStrength = 0.5;
