@@ -45,33 +45,27 @@ VertexOut VS(VertexIn vin)
 
 float4 PS(VertexOut pin) : SV_Target
 {
-    // calculate diffuse light
     float3 normal = normalize(pin.NormalW);
     float3 lightDir = normalize(gLights[0].lightPos - pin.PosW);
 
+    MaterialData Mat = gMaterialData[gMaterialIndex];
+
+    float4 diffuseColor = gTextureMaps[Mat.DiffuseMapIndex].Sample(gsamAnisotropicWrap, pin.TexC);
+
+    float3 ambient = gLights[0].ambient * diffuseColor.rgb;
+
+    // Diffuse
     float diff = max(dot(normal, lightDir), 0.0f);
+    float3 diffuse = gLights[0].diffuse * diff * diffuseColor.rgb;
 
-    float3 diffuseLight = diff * gLights[0].lightColor;
-
-    // calculate ambient light
-    float ambientStrength = 0.1;
-    float3 ambientLight = gLights[0].lightColor * ambientStrength;
-
-    float4 diffuseAlbedo = gMaterialData[gMaterialIndex].DiffuseAlbedo;
-
-    int textureIndex = gMaterialData[gMaterialIndex].DiffuseMapIndex;
-
-    diffuseAlbedo *= gTextureMaps[textureIndex].Sample(gsamAnisotropicWrap, pin.TexC);
-
-    // calculate specular light
-    float specularStrength = 0.5;
+    // Specular
     float3 toEye = normalize(gEyePosW - pin.PosW);
     float3 reflectDir = reflect(-lightDir, normal);
+    float spec = pow(max(dot(toEye, reflectDir), 0.0f), Mat.Shininess);
+    
+    float3 specular = gLights[0].specular * (spec * Mat.Specular);
 
-    float spec = pow(max(dot(toEye, reflectDir), 0.0f), 32);
-    float3 specular = specularStrength * spec * gLights[0].lightColor;
+    float3 result = ambient + diffuse + specular;
 
-    float3 result = (ambientLight + diffuseLight + specular) * diffuseAlbedo.rgb;
-
-    return float4(result, diffuseAlbedo.a);
+    return float4(result, diffuseColor.a);
 }

@@ -18,8 +18,12 @@ struct ObjectConstants
 struct LightObject {
 	DirectX::XMFLOAT3 LightPos;
 	float padding0;
-	DirectX::XMFLOAT3 LightColor;
-	float padding1;
+    DirectX::XMFLOAT3 Ambient;
+    float padding2;
+    DirectX::XMFLOAT3 Diffuse;
+    float padding3;
+    DirectX::XMFLOAT3 Specular;
+    float padding4;
 };
 
 struct PassConstants
@@ -50,17 +54,17 @@ struct PassConstants
 
 struct MaterialData
 {
-	DirectX::XMFLOAT4 DiffuseAlbedo = { 1.0f, 1.0f, 1.0f, 1.0f };
-	DirectX::XMFLOAT3 FresnelR0 = { 0.01f, 0.01f, 0.01f };
-	float Roughness = 0.5f;
-
-	// Used in texture mapping.
-	DirectX::XMFLOAT4X4 MatTransform = MathHelper::Identity4x4();
-
+	float Shininess = 0.5f;
+    DirectX::XMFLOAT3 Specular;
 	UINT DiffuseMapIndex = 0;
+
 	UINT NormalMapIndex = 0;
 	UINT MaterialPad1;
 	UINT MaterialPad2;
+    UINT MaterialPad3;
+
+	// Used in texture mapping.
+	DirectX::XMFLOAT4X4 MatTransform = MathHelper::Identity4x4();
 };
 
 struct Vertex

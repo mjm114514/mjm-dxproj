@@ -164,7 +164,7 @@ bool PBR::Initialize()
 	// so we have to query this information.
     mCbvSrvDescriptorSize = md3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-	mCamera.SetPosition(0.0f, 2.0f, -15.0f);
+	mCamera.SetPosition(0.0f, 0.0f, -3.0f);
  
 	LoadTextures();
     BuildRootSignature();
@@ -379,9 +379,8 @@ void PBR::UpdateMaterialBuffer(const GameTimer& gt)
 			XMMATRIX matTransform = XMLoadFloat4x4(&mat->MatTransform);
 
 			MaterialData matData;
-			matData.DiffuseAlbedo = mat->DiffuseAlbedo;
-			matData.FresnelR0 = mat->FresnelR0;
-			matData.Roughness = mat->Roughness;
+			matData.Specular = mat->Specular;
+			matData.Shininess = mat->Shininess;
 			XMStoreFloat4x4(&matData.MatTransform, XMMatrixTranspose(matTransform));
 			matData.DiffuseMapIndex = mat->DiffuseTexture->srvHeapIndex;
 			matData.NormalMapIndex = mat->NormalTexture->srvHeapIndex;
@@ -418,8 +417,10 @@ void PBR::UpdateMainPassCB(const GameTimer& gt)
 	mMainPassCB.TotalTime = gt.TotalTime();
 	mMainPassCB.DeltaTime = gt.DeltaTime();
 	mMainPassCB.AmbientLight = { 0.25f, 0.25f, 0.35f, 1.0f };
-	mMainPassCB.Lights[0].LightPos = { 4.0f, 4.0f, -3.0f };
-	mMainPassCB.Lights[0].LightColor = { 1.0f, 1.0f, 1.0f };
+	mMainPassCB.Lights[0].LightPos = { 1.2f, 1.0f, 2.0f };
+	mMainPassCB.Lights[0].Ambient = { 0.2f, 0.2f, 0.2f };
+	mMainPassCB.Lights[0].Diffuse = { 0.5f, 0.5f, 0.5f };
+	mMainPassCB.Lights[0].Specular = { 1.0f, 1.0f, 1.0f };;
 	auto currPassCB = mCurrFrameResource->PassCB.get();
 	currPassCB->CopyData(0, mMainPassCB);
 }
@@ -430,19 +431,22 @@ void PBR::LoadTextures()
 	{
 		"default",
 		"defaultNormal",
-		"wood"
+		"wood",
+		"container2",
 	};
 	
 	std::vector<std::wstring> texFilenames = 
 	{
 		L"../Textures/white1x1.dds",
 		L"../Textures/default_nmap.dds",
-		L"../textures-nondds/wood.png"
+		L"../textures-nondds/wood.png",
+		L"../textures-nondds/container2.png",
 	};
 
 	std::vector<bool> isDDS = {
 		true,
 		true,
+		false,
 		false
 	};
 
@@ -757,10 +761,8 @@ void PBR::BuildMaterials()
 	wood->MatCBIndex = 0;
 	wood->DiffuseTexture = mTextures["wood"].get();
 	wood->NormalTexture = mTextures["defaultNormal"].get();
-	wood->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	wood->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
-	wood->Roughness = 0.3f;
-
+	wood->Specular = XMFLOAT3(0.1f, 0.1f, 0.1f);
+	wood->Shininess = 0.3f;
 	mMaterials["wood"] = std::move(wood);
 
 	auto cube = std::make_unique<MaterialObj>();
@@ -768,39 +770,34 @@ void PBR::BuildMaterials()
 	cube->MatCBIndex = 1;
 	cube->DiffuseTexture = mTextures["default"].get();
 	cube->NormalTexture = mTextures["defaultNormal"].get();
-	cube->DiffuseAlbedo = XMFLOAT4(Colors::Red);
-	cube->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
-	cube->Roughness = 0.3f;
-
+	cube->Specular = XMFLOAT3(0.1f, 0.1f, 0.1f);
+	cube->Shininess = 0.3f;
 	mMaterials["cube"] = std::move(cube);
+
+	auto container = std::make_unique<MaterialObj>();
+	container->Name = "container";
+	container->MatCBIndex = 2;
+	container->DiffuseTexture = mTextures["container2"].get();
+	container->NormalTexture = mTextures["defaultNormal"].get();
+	container->Specular = XMFLOAT3(0.5f, 0.5f, 0.5f);
+	container->Shininess = 32.0f;
+	mMaterials["container"] = std::move(container);
+
+
 }
 
 void PBR::BuildRenderItems()
 {
-	auto boxRitem = std::make_unique<RenderItem>();
-	XMStoreFloat4x4(&boxRitem->World, XMMatrixScaling(2.0f, 2.0f, 2.0f)*XMMatrixTranslation(0.0f, 0.0f, 0.0f));
-	XMStoreFloat4x4(&boxRitem->TexTransform, XMMatrixScaling(1.0f, 0.5f, 1.0f));
-	boxRitem->ObjCBIndex = 1;
-	boxRitem->Mat = mMaterials["cube"].get();
-	boxRitem->Geo = mGeometries["shapeGeo"].get();
-	boxRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	boxRitem->IndexCount = boxRitem->Geo->DrawArgs["box"].IndexCount;
-	boxRitem->StartIndexLocation = boxRitem->Geo->DrawArgs["box"].StartIndexLocation;
-	boxRitem->BaseVertexLocation = boxRitem->Geo->DrawArgs["box"].BaseVertexLocation;
-
-	mRitemLayer[(int)RenderLayer::Opaque].push_back(boxRitem.get());
-	mAllRitems.push_back(std::move(boxRitem));
-
 	auto floorRitem = std::make_unique<RenderItem>();
 	floorRitem->World = MathHelper::Identity4x4();
 	floorRitem->TexTransform = MathHelper::Identity4x4();
 	floorRitem->ObjCBIndex = 2;
-	floorRitem->Mat = mMaterials["wood"].get();
+	floorRitem->Mat = mMaterials["container"].get();
 	floorRitem->Geo = mGeometries["shapeGeo"].get();
 	floorRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	floorRitem->IndexCount = floorRitem->Geo->DrawArgs["grid"].IndexCount;
-	floorRitem->StartIndexLocation = floorRitem->Geo->DrawArgs["grid"].StartIndexLocation;
-	floorRitem->BaseVertexLocation = floorRitem->Geo->DrawArgs["grid"].BaseVertexLocation;
+	floorRitem->IndexCount = floorRitem->Geo->DrawArgs["box"].IndexCount;
+	floorRitem->StartIndexLocation = floorRitem->Geo->DrawArgs["box"].StartIndexLocation;
+	floorRitem->BaseVertexLocation = floorRitem->Geo->DrawArgs["box"].BaseVertexLocation;
 
 	mRitemLayer[(int)RenderLayer::Opaque].push_back(floorRitem.get());
 	mAllRitems.push_back(std::move(floorRitem));

@@ -16,21 +16,26 @@ struct Light
 {
     float3 lightPos;
     float padding0;
-    float3 lightColor;
+    float3 ambient;
     float padding1;
+    float3 diffuse;
+    float padding2;
+    float3 specular;
+    float padding3;
 };
 
 // Include structures and functions for lighting.
 struct MaterialData
 {
-	float4   DiffuseAlbedo;
-	float3   FresnelR0;
-	float    Roughness;
-	float4x4 MatTransform;
+	float    Shininess;
+    float3   Specular;
 	uint     DiffuseMapIndex;
 	uint     NormalMapIndex;
 	uint     MatPad1;
 	uint     MatPad2;
+    uint	 MatPad3;
+
+	float4x4 MatTransform;
 };
 
 // An array of textures, which is only supported in shader model 5.1+.  Unlike Texture2DArray, the textures

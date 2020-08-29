@@ -18,9 +18,8 @@ struct MaterialObj {
 
 	int NumFramesDirty = 3;
 
-	DirectX::XMFLOAT4 DiffuseAlbedo = { 1.0f, 1.0f, 1.0f, 1.0f };
-	DirectX::XMFLOAT3 FresnelR0 = { 0.01f, 0.01f, 0.01f };
-	float Roughness = 0.25f;
+	DirectX::XMFLOAT3 Specular = { 0.01f, 0.01f, 0.01f };
+	float Shininess = 0.25f;
 
 	DirectX::XMFLOAT4X4 MatTransform = MathHelper::Identity4x4();
 };
