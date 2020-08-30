@@ -52,6 +52,7 @@ float4 PS(VertexOut pin) : SV_Target
 
     float4 diffuseColor = gTextureMaps[Mat.DiffuseMapIndex].Sample(gsamAnisotropicWrap, pin.TexC);
 
+    // Ambient
     float3 ambient = gLights[0].ambient * diffuseColor.rgb;
 
     // Diffuse
@@ -62,8 +63,8 @@ float4 PS(VertexOut pin) : SV_Target
     float3 toEye = normalize(gEyePosW - pin.PosW);
     float3 reflectDir = reflect(-lightDir, normal);
     float spec = pow(max(dot(toEye, reflectDir), 0.0f), Mat.Shininess);
-    
-    float3 specular = gLights[0].specular * (spec * Mat.Specular);
+    float3 specular = gLights[0].specular * spec * gTextureMaps[Mat.SpecularMapIndex].Sample(gsamAnisotropicWrap, pin.TexC).rgb;
+
 
     float3 result = ambient + diffuse + specular;
 

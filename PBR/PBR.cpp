@@ -379,7 +379,7 @@ void PBR::UpdateMaterialBuffer(const GameTimer& gt)
 			XMMATRIX matTransform = XMLoadFloat4x4(&mat->MatTransform);
 
 			MaterialData matData;
-			matData.Specular = mat->Specular;
+			matData.SpecularMapIndex = mat->SpecularTexture->srvHeapIndex;
 			matData.Shininess = mat->Shininess;
 			XMStoreFloat4x4(&matData.MatTransform, XMMatrixTranspose(matTransform));
 			matData.DiffuseMapIndex = mat->DiffuseTexture->srvHeapIndex;
@@ -433,6 +433,7 @@ void PBR::LoadTextures()
 		"defaultNormal",
 		"wood",
 		"container2",
+		"container2_specular",
 	};
 	
 	std::vector<std::wstring> texFilenames = 
@@ -441,13 +442,15 @@ void PBR::LoadTextures()
 		L"../Textures/default_nmap.dds",
 		L"../textures-nondds/wood.png",
 		L"../textures-nondds/container2.png",
+		L"../textures-nondds/container2_specular.png",
 	};
 
 	std::vector<bool> isDDS = {
 		true,
 		true,
 		false,
-		false
+		false,
+		false,
 	};
 
 	ResourceUploadBatch resUpload(md3dDevice.Get());
@@ -761,7 +764,7 @@ void PBR::BuildMaterials()
 	wood->MatCBIndex = 0;
 	wood->DiffuseTexture = mTextures["wood"].get();
 	wood->NormalTexture = mTextures["defaultNormal"].get();
-	wood->Specular = XMFLOAT3(0.1f, 0.1f, 0.1f);
+	wood->SpecularTexture = mTextures["default"].get();
 	wood->Shininess = 0.3f;
 	mMaterials["wood"] = std::move(wood);
 
@@ -770,7 +773,7 @@ void PBR::BuildMaterials()
 	cube->MatCBIndex = 1;
 	cube->DiffuseTexture = mTextures["default"].get();
 	cube->NormalTexture = mTextures["defaultNormal"].get();
-	cube->Specular = XMFLOAT3(0.1f, 0.1f, 0.1f);
+	cube->SpecularTexture = mTextures["default"].get();
 	cube->Shininess = 0.3f;
 	mMaterials["cube"] = std::move(cube);
 
@@ -779,10 +782,9 @@ void PBR::BuildMaterials()
 	container->MatCBIndex = 2;
 	container->DiffuseTexture = mTextures["container2"].get();
 	container->NormalTexture = mTextures["defaultNormal"].get();
-	container->Specular = XMFLOAT3(0.5f, 0.5f, 0.5f);
+	container->SpecularTexture = mTextures["container2_specular"].get();
 	container->Shininess = 32.0f;
 	mMaterials["container"] = std::move(container);
-
 
 }
 

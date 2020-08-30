@@ -28,12 +28,9 @@ struct Light
 struct MaterialData
 {
 	float    Shininess;
-    float3   Specular;
 	uint     DiffuseMapIndex;
 	uint     NormalMapIndex;
-	uint     MatPad1;
-	uint     MatPad2;
-    uint	 MatPad3;
+	uint     SpecularMapIndex;
 
 	float4x4 MatTransform;
 };

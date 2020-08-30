@@ -55,13 +55,9 @@ struct PassConstants
 struct MaterialData
 {
 	float Shininess = 0.5f;
-    DirectX::XMFLOAT3 Specular;
 	UINT DiffuseMapIndex = 0;
-
 	UINT NormalMapIndex = 0;
-	UINT MaterialPad1;
-	UINT MaterialPad2;
-    UINT MaterialPad3;
+    UINT SpecularMapIndex = 0;
 
 	// Used in texture mapping.
 	DirectX::XMFLOAT4X4 MatTransform = MathHelper::Identity4x4();
