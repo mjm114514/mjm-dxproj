@@ -16,14 +16,14 @@ struct ObjectConstants
 };
 
 struct LightObject {
-	DirectX::XMFLOAT3 LightPos;
-	float padding0;
+	DirectX::XMFLOAT3 LightPosAndDir;
+	float kConstant;
     DirectX::XMFLOAT3 Ambient;
-    float padding2;
+    float kLinear;
     DirectX::XMFLOAT3 Diffuse;
-    float padding3;
+    float kQuad;
     DirectX::XMFLOAT3 Specular;
-    float padding4;
+    float padding0;
 };
 
 struct PassConstants

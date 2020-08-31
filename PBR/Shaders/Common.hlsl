@@ -14,14 +14,14 @@
 
 struct Light
 {
-    float3 lightPos;
-    float padding0;
+    float3 dir_and_pos;
+    float k_constant;
     float3 ambient;
-    float padding1;
+    float k_linear;
     float3 diffuse;
-    float padding2;
+    float k_quad;
     float3 specular;
-    float padding3;
+    float padding;
 };
 
 // Include structures and functions for lighting.
@@ -89,24 +89,42 @@ cbuffer cbPass : register(b1)
     Light gLights[MAX_LIGHT];
 };
 
-//---------------------------------------------------------------------------------------
-// Transforms a normal map sample to world space.
-//---------------------------------------------------------------------------------------
-float3 NormalSampleToWorldSpace(float3 normalMapSample, float3 unitNormalW, float3 tangentW)
+float3 CalcDirLight(Light light, float3 normal, float3 toEye, float3 diffuseColor, float3 specularColor, float shininess)
 {
-	// Uncompress each component from [0,1] to [-1,1].
-	float3 normalT = 2.0f*normalMapSample - 1.0f;
+    MaterialData Mat = gMaterialData[gMaterialIndex];
 
-	// Build orthonormal basis.
-	float3 N = unitNormalW;
-	float3 T = normalize(tangentW - dot(tangentW, N)*N);
-	float3 B = cross(N, T);
+    float3 lightDir = normalize(-light.dir_and_pos);
 
-	float3x3 TBN = float3x3(T, B, N);
+    float diff = max(dot(lightDir, normal), 0.0f);
 
-	// Transform from tangent space to world space.
-	float3 bumpedNormalW = mul(normalT, TBN);
+    float3 reflectDir = reflect(-lightDir, normal);
+    float spec = pow(max(dot(reflectDir, toEye), 0.0f), shininess);
 
-	return bumpedNormalW;
+    float3 ambient = light.ambient * diffuseColor;
+    float3 diffuse = light.diffuse * diff * diffuseColor;
+    float3 specular = light.specular * spec * specularColor;
+
+    return ambient + diffuse + specular;
 }
 
+float3 CalcPointLight(Light light, float3 normal, float3 posW, float3 diffuseColor, float3 specularColor, float shininess)
+{
+    MaterialData Mat = gMaterialData[gMaterialIndex];
+
+    float3 lightDir = normalize(light.dir_and_pos - posW);
+    float3 toEye = normalize(gEyePosW - posW);
+
+    float diff = max(dot(lightDir, normal), 0.0f);
+
+    float3 reflectDir = reflect(-lightDir, normal);
+    float spec = pow(max(dot(reflectDir, toEye), 0.0f), shininess);
+
+    float distance = length(light.dir_and_pos - posW);
+    float attenuation = 1.0f / (light.k_constant + light.k_linear * distance + light.k_quad * distance * distance);
+
+    float3 ambient = light.ambient * diffuseColor;
+    float3 diffuse = light.diffuse * diff * diffuseColor;
+    float3 specular = light.specular * spec * specularColor;
+
+    return (ambient + diffuse + specular) * attenuation;
+}

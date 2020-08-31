@@ -46,7 +46,7 @@ VertexOut VS(VertexIn vin)
 float4 PS(VertexOut pin) : SV_Target
 {
     float3 normal = normalize(pin.NormalW);
-    float3 lightDir = normalize(gLights[0].lightPos - pin.PosW);
+    float3 lightDir = normalize(gLights[0].dir_and_pos - pin.PosW);
 
     MaterialData Mat = gMaterialData[gMaterialIndex];
 

@@ -417,7 +417,7 @@ void PBR::UpdateMainPassCB(const GameTimer& gt)
 	mMainPassCB.TotalTime = gt.TotalTime();
 	mMainPassCB.DeltaTime = gt.DeltaTime();
 	mMainPassCB.AmbientLight = { 0.25f, 0.25f, 0.35f, 1.0f };
-	mMainPassCB.Lights[0].LightPos = { 1.2f, 1.0f, 2.0f };
+	mMainPassCB.Lights[0].LightPosAndDir = { 1.2f, 1.0f, 2.0f };
 	mMainPassCB.Lights[0].Ambient = { 0.2f, 0.2f, 0.2f };
 	mMainPassCB.Lights[0].Diffuse = { 0.5f, 0.5f, 0.5f };
 	mMainPassCB.Lights[0].Specular = { 1.0f, 1.0f, 1.0f };;
