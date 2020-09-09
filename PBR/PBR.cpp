@@ -141,8 +141,7 @@ int WINAPI main(HINSTANCE hInstance, HINSTANCE prevInstance,
     }
 }
 
-PBR::PBR(HINSTANCE hInstance)
-    : D3DApp(hInstance)
+PBR::PBR(HINSTANCE hInstance) : D3DApp(hInstance)
 {
 }
 
@@ -794,12 +793,12 @@ void PBR::BuildRenderItems()
 	floorRitem->World = MathHelper::Identity4x4();
 	floorRitem->TexTransform = MathHelper::Identity4x4();
 	floorRitem->ObjCBIndex = 2;
-	floorRitem->Mat = mMaterials["container"].get();
+	floorRitem->Mat = mMaterials["wood"].get();
 	floorRitem->Geo = mGeometries["shapeGeo"].get();
 	floorRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	floorRitem->IndexCount = floorRitem->Geo->DrawArgs["box"].IndexCount;
-	floorRitem->StartIndexLocation = floorRitem->Geo->DrawArgs["box"].StartIndexLocation;
-	floorRitem->BaseVertexLocation = floorRitem->Geo->DrawArgs["box"].BaseVertexLocation;
+	floorRitem->IndexCount = floorRitem->Geo->DrawArgs["grid"].IndexCount;
+	floorRitem->StartIndexLocation = floorRitem->Geo->DrawArgs["grid"].StartIndexLocation;
+	floorRitem->BaseVertexLocation = floorRitem->Geo->DrawArgs["grid"].BaseVertexLocation;
 
 	mRitemLayer[(int)RenderLayer::Opaque].push_back(floorRitem.get());
 	mAllRitems.push_back(std::move(floorRitem));
