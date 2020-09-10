@@ -55,9 +55,12 @@ struct MaterialData
 
 	float roughness;
 	float ao;
-	
-	DirectX::XMFLOAT2 padding;
-
+	int AlbedoMapIndex;
+	int MetallicMapIndex;
+	int RoughnessMapIndex;
+	int AOMapIndex;
+	int NormalMapIndex;
+	float padding;
 };
 
 struct Vertex

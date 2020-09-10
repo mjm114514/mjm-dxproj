@@ -237,7 +237,7 @@ void PBR::Draw(const GameTimer& gt)
 		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
 
     // Clear the back buffer and depth buffer.
-    mCommandList->ClearRenderTargetView(CurrentBackBufferView(), Colors::Black, 0, nullptr);
+    mCommandList->ClearRenderTargetView(CurrentBackBufferView(), Colors::Gray, 0, nullptr);
     mCommandList->ClearDepthStencilView(DepthStencilView(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
 
     // Specify the buffers we are going to render to.
@@ -376,6 +376,12 @@ void PBR::UpdateMaterialBuffer(const GameTimer& gt)
 		if(mat->NumFramesDirty > 0)
 		{
 			MaterialData matData;
+			matData.AlbedoMapIndex = mat->AlbedoTex->srvHeapIndex;
+			matData.MetallicMapIndex = mat->MetallicTex->srvHeapIndex;
+			matData.RoughnessMapIndex = mat->RoughnessTex->srvHeapIndex;
+			matData.AOMapIndex = mat->AOTex->srvHeapIndex;
+			matData.NormalMapIndex = mat->NormalTex->srvHeapIndex;
+
 			matData.albedo = mat->albedo;
 			matData.metallic = mat->Metallic;
 			matData.roughness = mat->Roughness;
@@ -434,23 +440,44 @@ void PBR::LoadTextures()
 	{
 		"default",
 		"defaultNormal",
-		"wood",
-		"container2",
-		"container2_specular",
+		"rusted_iron_albedo",
+		"rusted_iron_ao",
+		"rusted_iron_metallic",
+		"rusted_iron_roughness",
+		"rusted_iron_normal",
+		"plastic_albedo",
+		"plastic_ao",
+		"plastic_metallic",
+		"plastic_roughness",
+		"plastic_normal",
 	};
 	
 	std::vector<std::wstring> texFilenames = 
 	{
 		L"../Textures/white1x1.dds",
 		L"../Textures/default_nmap.dds",
-		L"../textures-nondds/wood.png",
-		L"../textures-nondds/container2.png",
-		L"../textures-nondds/container2_specular.png",
+		L"../textures-nondds/pbr/rusted_iron/albedo.png",
+		L"../textures-nondds/pbr/rusted_iron/ao.png",
+		L"../textures-nondds/pbr/rusted_iron/metallic.png",
+		L"../textures-nondds/pbr/rusted_iron/roughness.png",
+		L"../textures-nondds/pbr/rusted_iron/normal.png",
+		L"../textures-nondds/pbr/gold/albedo.png",
+		L"../textures-nondds/pbr/gold/ao.png",
+		L"../textures-nondds/pbr/gold/metallic.png",
+		L"../textures-nondds/pbr/gold/roughness.png",
+		L"../textures-nondds/pbr/gold/normal.png",
 	};
 
 	std::vector<bool> isDDS = {
 		true,
 		true,
+		false,
+		false,
+		false,
+		false,
+		false,
+		false,
+		false,
 		false,
 		false,
 		false,
@@ -498,7 +525,7 @@ void PBR::BuildRootSignature()
 {
 
 	CD3DX12_DESCRIPTOR_RANGE texTable1;
-	texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 10, 0);
+	texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 20, 0);
 
     // Root parameter can be a table, root descriptor or root constants.
     CD3DX12_ROOT_PARAMETER slotRootParameter[4];
@@ -542,7 +569,7 @@ void PBR::BuildDescriptorHeaps()
 	// Create the SRV heap.
 	//
 	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-	srvHeapDesc.NumDescriptors = 10;
+	srvHeapDesc.NumDescriptors = 20;
 	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	ThrowIfFailed(md3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&mSrvDescriptorHeap)));
@@ -594,7 +621,7 @@ void PBR::BuildShapeGeometry()
     GeometryGenerator geoGen;
 	GeometryGenerator::MeshData box = geoGen.CreateBox(1.0f, 1.0f, 1.0f, 3);
 	GeometryGenerator::MeshData grid = geoGen.CreateGrid(20.0f, 30.0f, 60, 40);
-	GeometryGenerator::MeshData sphere = geoGen.CreateSphere(0.5f, 20, 20);
+	GeometryGenerator::MeshData sphere = geoGen.CreateSphere(0.5f, 30, 30);
 	GeometryGenerator::MeshData cylinder = geoGen.CreateCylinder(0.5f, 0.3f, 3.0f, 20, 20);
 
 	//
@@ -771,20 +798,54 @@ void PBR::BuildMaterials()
 			Mat->albedo = XMFLOAT3(Colors::Red);
 			Mat->AO = 1.0f;
 			Mat->Metallic = (float)col / 10;
-			Mat->Roughness = (1 - 0.05) * (row / 10) + 0.05;
+			Mat->Roughness = (1 - 0.05) * ((float)row / 10) + 0.05;
+
+			Mat->AlbedoTex = mTextures["default"].get();
+			Mat->MetallicTex = mTextures["default"].get();
+			Mat->AOTex = mTextures["default"].get();
+			Mat->RoughnessTex = mTextures["default"].get();
+			Mat->NormalTex = mTextures["defaultNormal"].get();
 			mMaterials[Mat->Name] = std::move(Mat);
 		}
 	}
+
+	auto rusted_iron = std::make_unique<MaterialObj>();
+	rusted_iron->Name = "rusted_iron";
+	rusted_iron->MatCBIndex = index++;
+	rusted_iron->albedo = XMFLOAT3(1, 1, 1);
+	rusted_iron->AO = 1.0f;
+	rusted_iron->Metallic = 1.0f;
+	rusted_iron->Roughness = 1.0f;
+	rusted_iron->AlbedoTex = mTextures["rusted_iron_albedo"].get();
+	rusted_iron->MetallicTex = mTextures["rusted_iron_metallic"].get();
+	rusted_iron->AOTex = mTextures["rusted_iron_ao"].get();
+	rusted_iron->RoughnessTex = mTextures["rusted_iron_roughness"].get();
+	rusted_iron->NormalTex = mTextures["rusted_iron_normal"].get();
+	mMaterials[rusted_iron->Name] = std::move(rusted_iron);
+
+	auto plastic = std::make_unique<MaterialObj>();
+	plastic->Name = "plastic";
+	plastic->MatCBIndex = index++;
+	plastic->albedo = XMFLOAT3(1, 1, 1);
+	plastic->AO = 1.0f;
+	plastic->Metallic = 1.0f;
+	plastic->Roughness = 1.0f;
+	plastic->AlbedoTex = mTextures["plastic_albedo"].get();
+	plastic->MetallicTex = mTextures["plastic_metallic"].get();
+	plastic->AOTex = mTextures["plastic_ao"].get();
+	plastic->RoughnessTex = mTextures["plastic_roughness"].get();
+	plastic->NormalTex = mTextures["plastic_normal"].get();
+	mMaterials[plastic->Name] = std::move(plastic);
 }
 
 void PBR::BuildRenderItems()
 {
 	int index = 0;
-	XMMATRIX scaling = XMMatrixScaling(4, 4, 4);
+	XMMATRIX scaling = XMMatrixScaling(2, 2, 2);
 	for (int row = 0; row < 10; row++) {
 		for (int col = 0; col < 10; col++) {
 			auto ball = std::make_unique<RenderItem>();
-			XMMATRIX translate = XMMatrixTranslation((col - 5) * 5, (row - 5) * 5, 0);
+			XMMATRIX translate = XMMatrixTranslation((col - 5) * 3, (row - 5) * 3, 0);
 			XMStoreFloat4x4(&ball->World, scaling * translate);
 			ball->TexTransform = MathHelper::Identity4x4();
 			ball->ObjCBIndex = index++;
@@ -799,29 +860,59 @@ void PBR::BuildRenderItems()
 			mAllRitems.push_back(std::move(ball));
 		}
 	}
+
+	auto ball = std::make_unique<RenderItem>();
+	XMMATRIX translate = XMMatrixTranslation(0, 0, 5);
+	XMStoreFloat4x4(&ball->World, scaling * translate);
+	ball->TexTransform = MathHelper::Identity4x4();
+	ball->ObjCBIndex = index++;
+	ball->Mat = mMaterials["rusted_iron"].get();
+	ball->Geo = mGeometries["shapeGeo"].get();
+	ball->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	ball->IndexCount = ball->Geo->DrawArgs["sphere"].IndexCount;
+	ball->StartIndexLocation = ball->Geo->DrawArgs["sphere"].StartIndexLocation;
+	ball->BaseVertexLocation = ball->Geo->DrawArgs["sphere"].BaseVertexLocation;
+
+	mRitemLayer[(int)RenderLayer::Opaque].push_back(ball.get());
+	mAllRitems.push_back(std::move(ball));
+
+	ball = std::make_unique<RenderItem>();
+	translate = XMMatrixTranslation(0, 5, 5);
+	XMStoreFloat4x4(&ball->World, scaling * translate);
+	ball->TexTransform = MathHelper::Identity4x4();
+	ball->ObjCBIndex = index++;
+	ball->Mat = mMaterials["plastic"].get();
+	ball->Geo = mGeometries["shapeGeo"].get();
+	ball->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	ball->IndexCount = ball->Geo->DrawArgs["sphere"].IndexCount;
+	ball->StartIndexLocation = ball->Geo->DrawArgs["sphere"].StartIndexLocation;
+	ball->BaseVertexLocation = ball->Geo->DrawArgs["sphere"].BaseVertexLocation;
+
+	mRitemLayer[(int)RenderLayer::Opaque].push_back(ball.get());
+	mAllRitems.push_back(std::move(ball));
 }
 
 void PBR::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritems)
 {
-    UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
- 
+	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+
 	auto objectCB = mCurrFrameResource->ObjectCB->Resource();
 
-    // For each render item...
-    for(size_t i = 0; i < ritems.size(); ++i)
-    {
-        auto ri = ritems[i];
+	// For each render item...
+	for (size_t i = 0; i < ritems.size(); ++i)
+	{
+		auto ri = ritems[i];
 
-        cmdList->IASetVertexBuffers(0, 1, &ri->Geo->VertexBufferView());
-        cmdList->IASetIndexBuffer(&ri->Geo->IndexBufferView());
-        cmdList->IASetPrimitiveTopology(ri->PrimitiveType);
+		cmdList->IASetVertexBuffers(0, 1, &ri->Geo->VertexBufferView());
+		cmdList->IASetIndexBuffer(&ri->Geo->IndexBufferView());
+		cmdList->IASetPrimitiveTopology(ri->PrimitiveType);
 
-        D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = objectCB->GetGPUVirtualAddress() + ri->ObjCBIndex*objCBByteSize;
+		D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = objectCB->GetGPUVirtualAddress() + ri->ObjCBIndex * objCBByteSize;
 
 		cmdList->SetGraphicsRootConstantBufferView(0, objCBAddress);
 
-        cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
-    }
+		cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
+	}
 }
 
 std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> PBR::GetStaticSamplers()
@@ -875,8 +966,8 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> PBR::GetStaticSamplers()
 		0.0f,                              // mipLODBias
 		8);                                // maxAnisotropy
 
-	return { 
+	return {
 		pointWrap, pointClamp,
-		linearWrap, linearClamp, 
+		linearWrap, linearClamp,
 		anisotropicWrap, anisotropicClamp };
 }

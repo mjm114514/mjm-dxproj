@@ -13,6 +13,12 @@ struct MaterialObj {
 	std::string Name;
 	UINT MatCBIndex;
 
+	TextureData* AlbedoTex;
+	TextureData* MetallicTex;
+	TextureData* RoughnessTex;
+	TextureData* AOTex;
+	TextureData* NormalTex;
+
 	DirectX::XMFLOAT3 albedo;
 	float Metallic;
 	float Roughness;
