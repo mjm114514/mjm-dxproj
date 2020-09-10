@@ -13,15 +13,12 @@ struct MaterialObj {
 	std::string Name;
 	UINT MatCBIndex;
 
-	TextureData* DiffuseTexture;
-	TextureData* NormalTexture;
-	TextureData* SpecularTexture;
+	DirectX::XMFLOAT3 albedo;
+	float Metallic;
+	float Roughness;
+	float AO;
 
 	int NumFramesDirty = 3;
-
-	float Shininess = 0.25f;
-
-	DirectX::XMFLOAT4X4 MatTransform = MathHelper::Identity4x4();
 };
 
 enum class RenderLayer : int

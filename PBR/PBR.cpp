@@ -375,14 +375,11 @@ void PBR::UpdateMaterialBuffer(const GameTimer& gt)
 		MaterialObj* mat = e.second.get();
 		if(mat->NumFramesDirty > 0)
 		{
-			XMMATRIX matTransform = XMLoadFloat4x4(&mat->MatTransform);
-
 			MaterialData matData;
-			matData.SpecularMapIndex = mat->SpecularTexture->srvHeapIndex;
-			matData.Shininess = mat->Shininess;
-			XMStoreFloat4x4(&matData.MatTransform, XMMatrixTranspose(matTransform));
-			matData.DiffuseMapIndex = mat->DiffuseTexture->srvHeapIndex;
-			matData.NormalMapIndex = mat->NormalTexture->srvHeapIndex;
+			matData.albedo = mat->albedo;
+			matData.metallic = mat->Metallic;
+			matData.roughness = mat->Roughness;
+			matData.ao = mat->AO;
 
 			currMaterialBuffer->CopyData(mat->MatCBIndex, matData);
 
@@ -416,10 +413,17 @@ void PBR::UpdateMainPassCB(const GameTimer& gt)
 	mMainPassCB.TotalTime = gt.TotalTime();
 	mMainPassCB.DeltaTime = gt.DeltaTime();
 	mMainPassCB.AmbientLight = { 0.25f, 0.25f, 0.35f, 1.0f };
-	mMainPassCB.Lights[0].LightPosAndDir = { 1.2f, 1.0f, 2.0f };
-	mMainPassCB.Lights[0].Ambient = { 0.2f, 0.2f, 0.2f };
-	mMainPassCB.Lights[0].Diffuse = { 0.5f, 0.5f, 0.5f };
-	mMainPassCB.Lights[0].Specular = { 1.0f, 1.0f, 1.0f };;
+
+	mMainPassCB.Lights[0].LightPosAndDir = XMFLOAT3(-10, 10, 10);
+	mMainPassCB.Lights[1].LightPosAndDir = XMFLOAT3(10, 10, 10);
+	mMainPassCB.Lights[2].LightPosAndDir = XMFLOAT3(-10, -10, 10);
+	mMainPassCB.Lights[3].LightPosAndDir = XMFLOAT3(10, -10, 10);
+
+	mMainPassCB.Lights[0].LightColor = XMFLOAT3(300, 300, 300);
+	mMainPassCB.Lights[1].LightColor = XMFLOAT3(300, 300, 300);
+	mMainPassCB.Lights[2].LightColor = XMFLOAT3(300, 300, 300);
+	mMainPassCB.Lights[3].LightColor = XMFLOAT3(300, 300, 300);
+	
 	auto currPassCB = mCurrFrameResource->PassCB.get();
 	currPassCB->CopyData(0, mMainPassCB);
 }
@@ -573,8 +577,8 @@ void PBR::BuildShadersAndInputLayout()
 		NULL, NULL
 	};
 
-	mShaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\BasicLighting.hlsl", nullptr, "VS", "vs_5_1");
-	mShaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\BasicLighting.hlsl", nullptr, "PS", "ps_5_1");
+	mShaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\PBR.hlsl", nullptr, "VS", "vs_5_1");
+	mShaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\PBR.hlsl", nullptr, "PS", "ps_5_1");
 
     mInputLayout =
     {
@@ -758,50 +762,43 @@ void PBR::BuildFrameResources()
 
 void PBR::BuildMaterials()
 {
-	auto wood = std::make_unique<MaterialObj>();
-	wood->Name = "wood";
-	wood->MatCBIndex = 0;
-	wood->DiffuseTexture = mTextures["wood"].get();
-	wood->NormalTexture = mTextures["defaultNormal"].get();
-	wood->SpecularTexture = mTextures["default"].get();
-	wood->Shininess = 0.3f;
-	mMaterials["wood"] = std::move(wood);
-
-	auto cube = std::make_unique<MaterialObj>();
-	cube->Name = "cube";
-	cube->MatCBIndex = 1;
-	cube->DiffuseTexture = mTextures["default"].get();
-	cube->NormalTexture = mTextures["defaultNormal"].get();
-	cube->SpecularTexture = mTextures["default"].get();
-	cube->Shininess = 0.3f;
-	mMaterials["cube"] = std::move(cube);
-
-	auto container = std::make_unique<MaterialObj>();
-	container->Name = "container";
-	container->MatCBIndex = 2;
-	container->DiffuseTexture = mTextures["container2"].get();
-	container->NormalTexture = mTextures["defaultNormal"].get();
-	container->SpecularTexture = mTextures["container2_specular"].get();
-	container->Shininess = 32.0f;
-	mMaterials["container"] = std::move(container);
-
+	int index = 0;
+	for (int row = 0; row < 10; row++) {
+		for (int col = 0; col < 10; col++) {
+			auto Mat = std::make_unique<MaterialObj>();
+			Mat->Name = "Mat_" + std::to_string(row) + "_" + std::to_string(col);
+			Mat->MatCBIndex = index++;
+			Mat->albedo = XMFLOAT3(Colors::Red);
+			Mat->AO = 1.0f;
+			Mat->Metallic = (float)col / 10;
+			Mat->Roughness = (1 - 0.05) * (row / 10) + 0.05;
+			mMaterials[Mat->Name] = std::move(Mat);
+		}
+	}
 }
 
 void PBR::BuildRenderItems()
 {
-	auto floorRitem = std::make_unique<RenderItem>();
-	floorRitem->World = MathHelper::Identity4x4();
-	floorRitem->TexTransform = MathHelper::Identity4x4();
-	floorRitem->ObjCBIndex = 2;
-	floorRitem->Mat = mMaterials["wood"].get();
-	floorRitem->Geo = mGeometries["shapeGeo"].get();
-	floorRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	floorRitem->IndexCount = floorRitem->Geo->DrawArgs["grid"].IndexCount;
-	floorRitem->StartIndexLocation = floorRitem->Geo->DrawArgs["grid"].StartIndexLocation;
-	floorRitem->BaseVertexLocation = floorRitem->Geo->DrawArgs["grid"].BaseVertexLocation;
+	int index = 0;
+	XMMATRIX scaling = XMMatrixScaling(4, 4, 4);
+	for (int row = 0; row < 10; row++) {
+		for (int col = 0; col < 10; col++) {
+			auto ball = std::make_unique<RenderItem>();
+			XMMATRIX translate = XMMatrixTranslation((col - 5) * 5, (row - 5) * 5, 0);
+			XMStoreFloat4x4(&ball->World, scaling * translate);
+			ball->TexTransform = MathHelper::Identity4x4();
+			ball->ObjCBIndex = index++;
+			ball->Mat = mMaterials["Mat_" + std::to_string(row) + "_" + std::to_string(col)].get();
+			ball->Geo = mGeometries["shapeGeo"].get();
+			ball->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+			ball->IndexCount = ball->Geo->DrawArgs["sphere"].IndexCount;
+			ball->StartIndexLocation = ball->Geo->DrawArgs["sphere"].StartIndexLocation;
+			ball->BaseVertexLocation = ball->Geo->DrawArgs["sphere"].BaseVertexLocation;
 
-	mRitemLayer[(int)RenderLayer::Opaque].push_back(floorRitem.get());
-	mAllRitems.push_back(std::move(floorRitem));
+			mRitemLayer[(int)RenderLayer::Opaque].push_back(ball.get());
+			mAllRitems.push_back(std::move(ball));
+		}
+	}
 }
 
 void PBR::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritems)

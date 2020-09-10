@@ -15,24 +15,20 @@
 struct Light
 {
     float3 dir_and_pos;
-    float k_constant;
-    float3 ambient;
-    float k_linear;
-    float3 diffuse;
-    float k_quad;
-    float3 specular;
-    float padding;
+    float padding0;
+    float3 lightColor;
+    float padding1;
 };
 
 // Include structures and functions for lighting.
 struct MaterialData
 {
-	float    Shininess;
-	uint     DiffuseMapIndex;
-	uint     NormalMapIndex;
-	uint     SpecularMapIndex;
+    float3 albedo;
+    float metallic;
 
-	float4x4 MatTransform;
+    float roughness;
+    float ao;
+    float2 padding;
 };
 
 // An array of textures, which is only supported in shader model 5.1+.  Unlike Texture2DArray, the textures
@@ -89,42 +85,42 @@ cbuffer cbPass : register(b1)
     Light gLights[MAX_LIGHT];
 };
 
-float3 CalcDirLight(Light light, float3 normal, float3 toEye, float3 diffuseColor, float3 specularColor, float shininess)
-{
-    MaterialData Mat = gMaterialData[gMaterialIndex];
-
-    float3 lightDir = normalize(-light.dir_and_pos);
-
-    float diff = max(dot(lightDir, normal), 0.0f);
-
-    float3 reflectDir = reflect(-lightDir, normal);
-    float spec = pow(max(dot(reflectDir, toEye), 0.0f), shininess);
-
-    float3 ambient = light.ambient * diffuseColor;
-    float3 diffuse = light.diffuse * diff * diffuseColor;
-    float3 specular = light.specular * spec * specularColor;
-
-    return ambient + diffuse + specular;
-}
-
-float3 CalcPointLight(Light light, float3 normal, float3 posW, float3 diffuseColor, float3 specularColor, float shininess)
-{
-    MaterialData Mat = gMaterialData[gMaterialIndex];
-
-    float3 lightDir = normalize(light.dir_and_pos - posW);
-    float3 toEye = normalize(gEyePosW - posW);
-
-    float diff = max(dot(lightDir, normal), 0.0f);
-
-    float3 reflectDir = reflect(-lightDir, normal);
-    float spec = pow(max(dot(reflectDir, toEye), 0.0f), shininess);
-
-    float distance = length(light.dir_and_pos - posW);
-    float attenuation = 1.0f / (light.k_constant + light.k_linear * distance + light.k_quad * distance * distance);
-
-    float3 ambient = light.ambient * diffuseColor;
-    float3 diffuse = light.diffuse * diff * diffuseColor;
-    float3 specular = light.specular * spec * specularColor;
-
-    return (ambient + diffuse + specular) * attenuation;
-}
+// float3 CalcDirLight(Light light, float3 normal, float3 toEye, float3 diffuseColor, float3 specularColor, float shininess)
+// {
+//     MaterialData Mat = gMaterialData[gMaterialIndex];
+// 
+//     float3 lightDir = normalize(-light.dir_and_pos);
+// 
+//     float diff = max(dot(lightDir, normal), 0.0f);
+// 
+//     float3 reflectDir = reflect(-lightDir, normal);
+//     float spec = pow(max(dot(reflectDir, toEye), 0.0f), shininess);
+// 
+//     float3 ambient = light.ambient * diffuseColor;
+//     float3 diffuse = light.diffuse * diff * diffuseColor;
+//     float3 specular = light.specular * spec * specularColor;
+// 
+//     return ambient + diffuse + specular;
+// }
+// 
+// float3 CalcPointLight(Light light, float3 normal, float3 posW, float3 diffuseColor, float3 specularColor, float shininess)
+// {
+//     MaterialData Mat = gMaterialData[gMaterialIndex];
+// 
+//     float3 lightDir = normalize(light.dir_and_pos - posW);
+//     float3 toEye = normalize(gEyePosW - posW);
+// 
+//     float diff = max(dot(lightDir, normal), 0.0f);
+// 
+//     float3 reflectDir = reflect(-lightDir, normal);
+//     float spec = pow(max(dot(reflectDir, toEye), 0.0f), shininess);
+// 
+//     float distance = length(light.dir_and_pos - posW);
+//     float attenuation = 1.0f / (light.k_constant + light.k_linear * distance + light.k_quad * distance * distance);
+// 
+//     float3 ambient = light.ambient * diffuseColor;
+//     float3 diffuse = light.diffuse * diff * diffuseColor;
+//     float3 specular = light.specular * spec * specularColor;
+// 
+//     return (ambient + diffuse + specular) * attenuation;
+// }
