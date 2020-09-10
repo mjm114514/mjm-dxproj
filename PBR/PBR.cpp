@@ -103,6 +103,8 @@ private:
 	std::unordered_map<std::string, ComPtr<ID3DBlob>> mShaders;
 	std::unordered_map<std::string, ComPtr<ID3D12PipelineState>> mPSOs;
 
+	std::unique_ptr<TextureData> mCubeTexture;
+
     std::vector<D3D12_INPUT_ELEMENT_DESC> mInputLayout;
  
 	// List of all the render items.
@@ -261,7 +263,14 @@ void PBR::Draw(const GameTimer& gt)
     // The root signature knows how many descriptors are expected in the table.
 	mCommandList->SetGraphicsRootDescriptorTable(3, mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
+	CD3DX12_GPU_DESCRIPTOR_HANDLE handle(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+	handle.Offset(mCubeTexture->srvHeapIndex, mCbvSrvDescriptorSize);
+	mCommandList->SetGraphicsRootDescriptorTable(4, handle);
+
     DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
+
+	mCommandList->SetPipelineState(mPSOs["sky"].Get());
+	DrawRenderItems(mCommandList.Get(), mRitemLayer[( int )RenderLayer::Sky]);
 
     // Indicate a state transition on the resource usage.
 	mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(CurrentBackBuffer(),
@@ -515,9 +524,19 @@ void PBR::LoadTextures()
 
 		mTextures[texMap->Name] = std::move(texMap);
 	}
+	mCubeTexture = std::make_unique<TextureData>();
+	mCubeTexture->FileName = L"../Textures/Cubemap_LancellottiChapel.dds";
+	mCubeTexture->isDDS = true;
+	mCubeTexture->srvHeapIndex = ( int )texNames.size();
+	ThrowIfFailed(CreateDDSTextureFromFile(
+		md3dDevice.Get(),
+		resUpload,
+		mCubeTexture->FileName.c_str(),
+		mCubeTexture->Resource.ReleaseAndGetAddressOf(),
+		true
+	));
 
 	auto uploadResourceFinished = resUpload.End(mCommandQueue.Get());
-
 	uploadResourceFinished.wait();
 }
 
@@ -525,22 +544,26 @@ void PBR::BuildRootSignature()
 {
 
 	CD3DX12_DESCRIPTOR_RANGE texTable1;
-	texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 20, 0);
+	texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 20, 1);
+
+	CD3DX12_DESCRIPTOR_RANGE skyTable;
+	skyTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 
     // Root parameter can be a table, root descriptor or root constants.
-    CD3DX12_ROOT_PARAMETER slotRootParameter[4];
+    CD3DX12_ROOT_PARAMETER slotRootParameter[5];
 
 	// Perfomance TIP: Order from most frequent to least frequent.
     slotRootParameter[0].InitAsConstantBufferView(0); // cbPerObject
     slotRootParameter[1].InitAsConstantBufferView(1); // cbPass
     slotRootParameter[2].InitAsShaderResourceView(0, 1); // gMaterialData
 	slotRootParameter[3].InitAsDescriptorTable(1, &texTable1, D3D12_SHADER_VISIBILITY_PIXEL); // TextureMaps
+	slotRootParameter[4].InitAsDescriptorTable(1, &skyTable, D3D12_SHADER_VISIBILITY_PIXEL); // CubeMap
 
 
 	auto staticSamplers = GetStaticSamplers();
 
     // A root signature is an array of root parameters.
-	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(4, slotRootParameter,
+	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(5, slotRootParameter,
 		(UINT)staticSamplers.size(), staticSamplers.data(),
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
@@ -579,7 +602,7 @@ void PBR::BuildDescriptorHeaps()
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	srvDesc.Texture2D.MostDetailedMip = 0;
 	srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
-	
+
 	for(auto &t: mTextures)
 	{
 		auto tex = t.second.get();
@@ -594,6 +617,18 @@ void PBR::BuildDescriptorHeaps()
 
 		md3dDevice->CreateShaderResourceView(tex->Resource.Get(), &srvDesc, hDescriptor);
 	}
+
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
+	srvDesc.TextureCube.MipLevels = mCubeTexture->Resource->GetDesc().MipLevels;
+	srvDesc.TextureCube.MostDetailedMip = 0;
+	srvDesc.TextureCube.ResourceMinLODClamp = 0.0f;
+	srvDesc.Format = mCubeTexture->Resource->GetDesc().Format;
+	CD3DX12_CPU_DESCRIPTOR_HANDLE hDescriptor(
+			mSrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart(),
+			mCubeTexture->srvHeapIndex,
+			mCbvSrvUavDescriptorSize
+	);
+	md3dDevice->CreateShaderResourceView(mCubeTexture->Resource.Get(), &srvDesc, hDescriptor);
 }
 
 void PBR::BuildShadersAndInputLayout()
@@ -606,6 +641,8 @@ void PBR::BuildShadersAndInputLayout()
 
 	mShaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\PBR.hlsl", nullptr, "VS", "vs_5_1");
 	mShaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\PBR.hlsl", nullptr, "PS", "ps_5_1");
+	mShaders["skyVS"] = d3dUtil::CompileShader(L"Shaders\\sky.hlsl", nullptr, "VS", "vs_5_1");
+	mShaders["skyPS"] = d3dUtil::CompileShader(L"Shaders\\sky.hlsl", nullptr, "PS", "ps_5_1");
 
     mInputLayout =
     {
@@ -776,6 +813,18 @@ void PBR::BuildPSOs()
 	opaquePsoDesc.DSVFormat = mDepthStencilFormat;
     ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&opaquePsoDesc, IID_PPV_ARGS(&mPSOs["opaque"])));
 
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC skyPsoDesc = opaquePsoDesc;
+	skyPsoDesc.VS = {
+		reinterpret_cast< BYTE* >(mShaders["skyVS"]->GetBufferPointer()),
+		mShaders["skyVS"]->GetBufferSize()
+	};
+	skyPsoDesc.PS = {
+		reinterpret_cast< BYTE* >(mShaders["skyPS"]->GetBufferPointer()),
+		mShaders["skyPS"]->GetBufferSize()
+	};
+	skyPsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+	skyPsoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+	ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&skyPsoDesc, IID_PPV_ARGS(&mPSOs["sky"])));
 }
 
 void PBR::BuildFrameResources()
@@ -890,6 +939,20 @@ void PBR::BuildRenderItems()
 
 	mRitemLayer[(int)RenderLayer::Opaque].push_back(ball.get());
 	mAllRitems.push_back(std::move(ball));
+
+	auto sky = std::make_unique<RenderItem>();
+	XMStoreFloat4x4(&sky->World, XMMatrixScaling(5000, 5000, 5000));
+	sky->TexTransform = MathHelper::Identity4x4();
+	sky->ObjCBIndex = index++;
+	sky->Mat = mMaterials["plastic"].get();
+	sky->Geo = mGeometries["shapeGeo"].get();
+	sky->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	sky->IndexCount = sky->Geo->DrawArgs["sphere"].IndexCount;
+	sky->StartIndexLocation = sky->Geo->DrawArgs["sphere"].StartIndexLocation;
+	sky->BaseVertexLocation = sky->Geo->DrawArgs["sphere"].BaseVertexLocation;
+
+	mRitemLayer[( int )RenderLayer::Sky].push_back(sky.get());
+	mAllRitems.push_back(std::move(sky));
 }
 
 void PBR::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritems)

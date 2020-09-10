@@ -1,8 +1,3 @@
-//=============================================================================
-// Sky.fx by Frank Luna (C) 2011 All Rights Reserved.
-//=============================================================================
-
-// Include common HLSL code.
 #include "Common.hlsl"
 
 struct VertexIn
