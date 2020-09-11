@@ -133,6 +133,7 @@ float4 PS(VertexOut pin) : SV_Target
 
     float3 color = ambient + light;
     color = color / (color + float3(1, 1, 1));
+    color = pow(color, float3(1.0 / 2.2, 1.0 / 2.2, 1.0 / 2.2));
 
     return float4(color, 1);
 }

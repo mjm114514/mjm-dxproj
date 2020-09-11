@@ -1,6 +1,7 @@
 #include "../Common/d3dUtil.h"
 
-struct TextureData {
+class TextureData {
+public:
 	std::string Name;
 	std::wstring FileName;
 	bool isDDS = false;
