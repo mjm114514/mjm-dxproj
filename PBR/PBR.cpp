@@ -5,6 +5,7 @@
 #include "../Common/Camera.h"
 #include "FrameResource.h"
 #include "PBRUtil.h"
+#include "CubeMap.h"
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
@@ -65,12 +66,15 @@ private:
     virtual void OnMouseDown(WPARAM btnState, int x, int y)override;
     virtual void OnMouseUp(WPARAM btnState, int x, int y)override;
     virtual void OnMouseMove(WPARAM btnState, int x, int y)override;
+	virtual void CreateRtvAndDsvDescriptorHeaps()override;
 
     void OnKeyboardInput(const GameTimer& gt);
 	void AnimateMaterials(const GameTimer& gt);
 	void UpdateObjectCBs(const GameTimer& gt);
 	void UpdateMaterialBuffer(const GameTimer& gt);
 	void UpdateMainPassCB(const GameTimer& gt);
+
+	void CreateIBLDiffuseMap();
 
 	void LoadTextures();
     void BuildRootSignature();
@@ -104,6 +108,8 @@ private:
 	std::unordered_map<std::string, ComPtr<ID3D12PipelineState>> mPSOs;
 
 	std::unique_ptr<TextureData> mCubeTexture;
+
+	std::unique_ptr<CubeMap> mIBLCubeMap;
 
     std::vector<D3D12_INPUT_ELEMENT_DESC> mInputLayout;
  
@@ -193,6 +199,26 @@ void PBR::OnResize()
     D3DApp::OnResize();
 
 	mCamera.SetLens(0.25f*MathHelper::Pi, AspectRatio(), 1.0f, 1000.0f);
+}
+
+void PBR::CreateRtvAndDsvDescriptorHeaps() {
+
+	// +6 for IBL CubeMapping
+    D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc;
+    rtvHeapDesc.NumDescriptors = SwapChainBufferCount + 6;
+    rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+	rtvHeapDesc.NodeMask = 0;
+    ThrowIfFailed(md3dDevice->CreateDescriptorHeap(
+        &rtvHeapDesc, IID_PPV_ARGS(mRtvHeap.GetAddressOf())));
+
+    D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc;
+    dsvHeapDesc.NumDescriptors = 1;
+    dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+    dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+	dsvHeapDesc.NodeMask = 0;
+    ThrowIfFailed(md3dDevice->CreateDescriptorHeap(
+        &dsvHeapDesc, IID_PPV_ARGS(mDsvHeap.GetAddressOf())));
 }
 
 void PBR::Update(const GameTimer& gt)
