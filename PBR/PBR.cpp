@@ -13,6 +13,8 @@ using namespace DirectX::PackedVector;
 
 const int gNumFrameResources = 3;
 
+const int IBLMapSize = 1024;
+
 // Lightweight structure stores parameters to draw a shape.  This will
 // vary from app-to-app.
 struct RenderItem
@@ -172,8 +174,10 @@ bool PBR::Initialize()
     mCbvSrvDescriptorSize = md3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
 	mCamera.SetPosition(0.0f, 0.0f, -3.0f);
- 
+
 	LoadTextures();
+
+ 
     BuildRootSignature();
 	BuildDescriptorHeaps();
     BuildShadersAndInputLayout();
@@ -183,9 +187,16 @@ bool PBR::Initialize()
     BuildFrameResources();
     BuildPSOs();
 
+
     // Execute the initialization commands.
     ThrowIfFailed(mCommandList->Close());
     ID3D12CommandList* cmdsLists[] = { mCommandList.Get() };
+    mCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
+
+	mIBLCubeMap->DrawToCubeMap(mCommandList.Get());
+
+    ThrowIfFailed(mCommandList->Close());
+	cmdsLists[0] = mCommandList.Get();
     mCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
 
     // Wait until initialization is complete.
@@ -290,7 +301,7 @@ void PBR::Draw(const GameTimer& gt)
 	mCommandList->SetGraphicsRootDescriptorTable(3, mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
 	CD3DX12_GPU_DESCRIPTOR_HANDLE handle(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-	handle.Offset(mCubeTexture->srvHeapIndex, mCbvSrvDescriptorSize);
+	handle.Offset(mIBLCubeMap->srvHeapIndex, mCbvSrvDescriptorSize);
 	mCommandList->SetGraphicsRootDescriptorTable(4, handle);
 
     DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
@@ -564,6 +575,10 @@ void PBR::LoadTextures()
 
 	auto uploadResourceFinished = resUpload.End(mCommandQueue.Get());
 	uploadResourceFinished.wait();
+
+	mIBLCubeMap = std::make_unique<CubeMap>(md3dDevice.Get(), mCubeTexture->Resource.Get(), IBLMapSize, IBLMapSize, DXGI_FORMAT_R8G8B8A8_UNORM);
+
+	mIBLCubeMap->srvHeapIndex = ( int )texNames.size() + 1;
 }
 
 void PBR::BuildRootSignature()
@@ -655,6 +670,12 @@ void PBR::BuildDescriptorHeaps()
 			mCbvSrvUavDescriptorSize
 	);
 	md3dDevice->CreateShaderResourceView(mCubeTexture->Resource.Get(), &srvDesc, hDescriptor);
+
+	ID3D12Resource* IBLResource = mIBLCubeMap->Resource();
+	srvDesc.TextureCube.MipLevels = IBLResource->GetDesc().MipLevels;
+	srvDesc.Format = IBLResource->GetDesc().Format;
+	hDescriptor.Offset(mCbvSrvDescriptorSize);
+	md3dDevice->CreateShaderResourceView(IBLResource, &srvDesc, hDescriptor);
 }
 
 void PBR::BuildShadersAndInputLayout()

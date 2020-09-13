@@ -17,8 +17,8 @@ struct VertexIn
 
 struct VertexOut
 {
-    float3 PosH : SV_Position;
-    float3 TexC : TEXCOORD;
+    float4 PosH : SV_Position;
+    float3 PosV : POSITION;
 };
 
 static const float2 gTexCoords[6] =
@@ -31,18 +31,23 @@ static const float2 gTexCoords[6] =
     float2(1.0f, 1.0f),
 };
 
-VertexOut VS(int pid : SV_VertexID)
+VertexOut VS(uint pid : SV_VertexID)
 {
     VertexOut vout;
-    vout.TexC = gTexCoords[i];
-    vout.PosH = float4(2.0f * vout.TexC.x - 1.0f, 1.0f - 2.0f * vout.TexC.y, 0.0f, 1.0f);
+    vout.PosV.x = gTexCoords[pid].x * 2.0f - 1.0f;
+    vout.PosV.y = 1.0f - gTexCoords[pid].y * 2.0f;
+    vout.PosV.z = 1.0f;
+    vout.PosH = float4(vout.PosV, 1.0f);
     return vout;
 }
 
 float4 PS(VertexOut pin) : SV_Target
 {
     float3 gRight = normalize(cross(gUp, gLookAt));
-    float3 normalL = float3(pin.PosH.xy, 1.0f);
+    float3 normalL = pin.PosV;
+
+
+
     float3 normalW = mul(normalL, float3x3(gRight, gUp, gLookAt));
     normalW = normalize(normalW);
 

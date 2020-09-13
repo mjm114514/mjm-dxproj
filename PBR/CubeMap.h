@@ -40,6 +40,9 @@ public:
 	);
 
 	void OnResize(UINT newWidth, UINT newHeight);
+	void DrawToCubeMap(ID3D12GraphicsCommandList* cmdList);
+
+	UINT srvHeapIndex;
 
 private:
 	void BuildResource();
@@ -48,7 +51,6 @@ private:
 	void BuildRootSignature();
 	void BuildDescriptors();
 	void BuildFaceConstant();
-	void DrawToCubeMap(ID3D12GraphicsCommandList* cmdList);
 
 private:
 	ID3D12Device* md3dDevice = nullptr;
@@ -62,7 +64,7 @@ private:
 
 	UINT mRtvDescriptorSize;
 	UINT mDsvDescriptorSize;
-	UINT CbvSrvUavDescriptorSize;
+	UINT mCbvSrvUavDescriptorSize;
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE mhCpuSrv;
 	CD3DX12_GPU_DESCRIPTOR_HANDLE mhGpuSrv;
