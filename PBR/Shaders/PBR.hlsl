@@ -49,6 +49,12 @@ float3 fresnelSchlick(float cosTheta, float3 f0)
     return f0 + (1 - f0) * pow(1 - cosTheta, 5);
 }
 
+float3 fresnelSchlickRoughness(float cosTheta, float3 f0, float roughness)
+{
+    float3 temp = max(float3(1, 1, 1) - roughness, f0);
+    return f0 + (temp - f0) * pow(1.0 - cosTheta, 5.0);
+}
+
 struct VertexIn
 {
     float3 PosL : POSITION;
@@ -129,7 +135,11 @@ float4 PS(VertexOut pin) : SV_Target
         light += (kD * albedo / PI + specular) * radiance * NdotL;
     }
 
-    float3 ambient = float3(0.03, 0.03, 0.03) * albedo * ao;
+    float3 ks = fresnelSchlickRoughness(max(dot(N, V), 0.0f), F0, roughness);
+    float3 kd = 1.0 - ks;
+    float3 irradiance = gIrradianceMap.Sample(gsamLinearWrap, N).rgb;
+    float3 diffuse = irradiance * albedo;
+    float3 ambient = (kd * diffuse) * ao;
 
     float3 color = ambient + light;
     color = color / (color + float3(1, 1, 1));

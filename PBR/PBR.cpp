@@ -300,9 +300,13 @@ void PBR::Draw(const GameTimer& gt)
     // The root signature knows how many descriptors are expected in the table.
 	mCommandList->SetGraphicsRootDescriptorTable(3, mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
-	CD3DX12_GPU_DESCRIPTOR_HANDLE handle(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-	handle.Offset(mIBLCubeMap->srvHeapIndex, mCbvSrvDescriptorSize);
-	mCommandList->SetGraphicsRootDescriptorTable(4, handle);
+	CD3DX12_GPU_DESCRIPTOR_HANDLE skyHandle(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+	skyHandle.Offset(mCubeTexture->srvHeapIndex, mCbvSrvDescriptorSize);
+	mCommandList->SetGraphicsRootDescriptorTable(4, skyHandle);
+
+	CD3DX12_GPU_DESCRIPTOR_HANDLE irradianceHandle(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+	irradianceHandle.Offset(mIBLCubeMap->srvHeapIndex, mCbvSrvDescriptorSize);
+	mCommandList->SetGraphicsRootDescriptorTable(5, irradianceHandle);
 
     DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
 
@@ -497,6 +501,23 @@ void PBR::LoadTextures()
 		"plastic_roughness",
 		"plastic_normal",
 	};
+
+	std::vector<bool> isSrgb = {
+		false,
+		false,
+		// rusted iron
+		true,
+		false,
+		false,
+		false,
+		false,
+		// gold
+		true,
+		false,
+		false,
+		false,
+		false,
+	};
 	
 	std::vector<std::wstring> texFilenames = 
 	{
@@ -517,11 +538,13 @@ void PBR::LoadTextures()
 	std::vector<bool> isDDS = {
 		true,
 		true,
+		// rusted iron
 		false,
 		false,
 		false,
 		false,
 		false,
+		// gold
 		false,
 		false,
 		false,
@@ -550,12 +573,14 @@ void PBR::LoadTextures()
 			));
 		}
 		else {
-			ThrowIfFailed(CreateWICTextureFromFile(
+			ThrowIfFailed(CreateWICTextureFromFileEx(
 				md3dDevice.Get(),
 				resUpload,
 				texMap->FileName.c_str(),
-				texMap->Resource.ReleaseAndGetAddressOf(),
-				true
+				0,
+				D3D12_RESOURCE_FLAG_NONE,
+				WIC_LOADER_MIP_AUTOGEN | (isSrgb[i] ? WIC_LOADER_FORCE_SRGB : WIC_LOADER_DEFAULT),
+				texMap->Resource.ReleaseAndGetAddressOf()
 			));
 		}
 
@@ -565,14 +590,15 @@ void PBR::LoadTextures()
 	mCubeTexture->FileName = L"../Textures/Cubemap_LancellottiChapel.dds";
 	mCubeTexture->isDDS = true;
 	mCubeTexture->srvHeapIndex = ( int )texNames.size();
-	ThrowIfFailed(CreateDDSTextureFromFile(
+	ThrowIfFailed(CreateDDSTextureFromFileEx(
 		md3dDevice.Get(),
 		resUpload,
 		mCubeTexture->FileName.c_str(),
-		mCubeTexture->Resource.ReleaseAndGetAddressOf(),
-		true
+		0,
+		D3D12_RESOURCE_FLAG_NONE,
+		DDS_LOADER_FORCE_SRGB | DDS_LOADER_MIP_AUTOGEN,
+		mCubeTexture->Resource.ReleaseAndGetAddressOf()
 	));
-
 	auto uploadResourceFinished = resUpload.End(mCommandQueue.Get());
 	uploadResourceFinished.wait();
 
@@ -585,13 +611,16 @@ void PBR::BuildRootSignature()
 {
 
 	CD3DX12_DESCRIPTOR_RANGE texTable1;
-	texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 20, 1);
+	texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 20, 2);
 
 	CD3DX12_DESCRIPTOR_RANGE skyTable;
 	skyTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 
+	CD3DX12_DESCRIPTOR_RANGE irradianceTable;
+	irradianceTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+
     // Root parameter can be a table, root descriptor or root constants.
-    CD3DX12_ROOT_PARAMETER slotRootParameter[5];
+    CD3DX12_ROOT_PARAMETER slotRootParameter[6];
 
 	// Perfomance TIP: Order from most frequent to least frequent.
     slotRootParameter[0].InitAsConstantBufferView(0); // cbPerObject
@@ -599,12 +628,12 @@ void PBR::BuildRootSignature()
     slotRootParameter[2].InitAsShaderResourceView(0, 1); // gMaterialData
 	slotRootParameter[3].InitAsDescriptorTable(1, &texTable1, D3D12_SHADER_VISIBILITY_PIXEL); // TextureMaps
 	slotRootParameter[4].InitAsDescriptorTable(1, &skyTable, D3D12_SHADER_VISIBILITY_PIXEL); // CubeMap
-
+	slotRootParameter[5].InitAsDescriptorTable(1, &irradianceTable, D3D12_SHADER_VISIBILITY_PIXEL); // irradianceMap
 
 	auto staticSamplers = GetStaticSamplers();
 
     // A root signature is an array of root parameters.
-	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(5, slotRootParameter,
+	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(_countof(slotRootParameter), slotRootParameter,
 		(UINT)staticSamplers.size(), staticSamplers.data(),
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 

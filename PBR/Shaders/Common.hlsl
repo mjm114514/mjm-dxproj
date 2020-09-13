@@ -38,7 +38,8 @@ struct MaterialData
 };
 
 TextureCube gCubeMap : register(t0);
-Texture2D gTextureMaps[20] : register(t1);
+TextureCube gIrradianceMap : register(t1);
+Texture2D gTextureMaps[20] : register(t2);
 
 StructuredBuffer<MaterialData> gMaterialData : register(t0, space1);
 
