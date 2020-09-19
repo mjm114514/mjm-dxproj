@@ -69,7 +69,7 @@ float4 PS(VertexOut pin) : SV_Target
         {
             float3 tangentSample = float3(sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta));
             float3 sampleVec = mul(tangentSample, float3x3(T, B, N));
-            irradiance += lightingCube.Sample(gsamLinearWrap, sampleVec) * cos(theta) * sin(theta);
+            irradiance += lightingCube.SampleLevel(gsamLinearWrap, sampleVec, 0.0f) * cos(theta) * sin(theta);
             nrSamplers++;
         }
     }

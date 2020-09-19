@@ -14,7 +14,7 @@ using namespace DirectX::PackedVector;
 
 const int gNumFrameResources = 3;
 
-const int IBLMapSize = 1024;
+const int IBLMapSize = 2048;
 
 // Lightweight structure stores parameters to draw a shape.  This will
 // vary from app-to-app.
@@ -303,7 +303,7 @@ void PBR::Draw(const GameTimer& gt)
 	mCommandList->SetGraphicsRootDescriptorTable(3, mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
 	CD3DX12_GPU_DESCRIPTOR_HANDLE skyHandle(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-	skyHandle.Offset(mCubeTexture->srvHeapIndex, mCbvSrvDescriptorSize);
+	skyHandle.Offset(mPrefilteredMap->srvHeapIndex, mCbvSrvDescriptorSize);
 	mCommandList->SetGraphicsRootDescriptorTable(4, skyHandle);
 
 	CD3DX12_GPU_DESCRIPTOR_HANDLE irradianceHandle(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
@@ -588,10 +588,11 @@ void PBR::LoadTextures()
 
 		mTextures[texMap->Name] = std::move(texMap);
 	}
+	UINT srvIndex = texNames.size();
 	mCubeTexture = std::make_unique<TextureData>();
 	mCubeTexture->FileName = L"../Textures/Cubemap_LancellottiChapel.dds";
 	mCubeTexture->isDDS = true;
-	mCubeTexture->srvHeapIndex = ( int )texNames.size();
+	mCubeTexture->srvHeapIndex = srvIndex++;
 	ThrowIfFailed(CreateDDSTextureFromFileEx(
 		md3dDevice.Get(),
 		resUpload,
@@ -605,11 +606,11 @@ void PBR::LoadTextures()
 	uploadResourceFinished.wait();
 
 	mDiffuseLight = std::make_unique<DiffuseCubeMap>(md3dDevice.Get(), mCubeTexture->Resource.Get(), IBLMapSize, IBLMapSize, DXGI_FORMAT_R8G8B8A8_UNORM);
-	mDiffuseLight->srvHeapIndex = ( int )texNames.size() + 1;
+	mDiffuseLight->srvHeapIndex = srvIndex++;
 	mDiffuseLight->Initialize();
 
 	mPrefilteredMap = std::make_unique<PreFilteredCubeMap>(md3dDevice.Get(), mCubeTexture->Resource.Get(), IBLMapSize, IBLMapSize, DXGI_FORMAT_R8G8B8A8_UNORM);
-	mPrefilteredMap->srvHeapIndex = ( int )texNames.size() + 1;
+	mPrefilteredMap->srvHeapIndex = srvIndex++;
 	mPrefilteredMap->Initialize();
 }
 
@@ -711,6 +712,12 @@ void PBR::BuildDescriptorHeaps()
 	srvDesc.Format = DiffuseLightResource->GetDesc().Format;
 	hDescriptor.Offset(mCbvSrvDescriptorSize);
 	md3dDevice->CreateShaderResourceView(DiffuseLightResource, &srvDesc, hDescriptor);
+
+	ID3D12Resource* PrefilteredReource = mPrefilteredMap->Resource();
+	srvDesc.TextureCube.MipLevels = PrefilteredReource->GetDesc().MipLevels;
+	srvDesc.Format = PrefilteredReource->GetDesc().Format;
+	hDescriptor.Offset(mCbvSrvDescriptorSize);
+	md3dDevice->CreateShaderResourceView(PrefilteredReource, &srvDesc, hDescriptor);
 }
 
 void PBR::BuildShadersAndInputLayout()

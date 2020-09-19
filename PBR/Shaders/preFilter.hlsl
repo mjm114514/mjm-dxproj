@@ -113,7 +113,7 @@ float4 PS(VertexOut pin) : SV_Target
         float NdotL = max(dot(N, L), 0);
         if (NdotL > 0)
         {
-            PrefilteredColor += lightingCube.Sample(gsamLinearWrap, L).rgb * NdotL;
+            PrefilteredColor += lightingCube.SampleLevel(gsamLinearWrap, L, 0.0f).rgb * NdotL;
             totalWeight += NdotL;
         }
     }

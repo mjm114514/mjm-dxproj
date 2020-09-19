@@ -210,15 +210,13 @@ void PreFilteredCubeMap::BakeCubeMap(ID3D12GraphicsCommandList* cmdList) {
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE rtv(mRtvHeap->GetCPUDescriptorHandleForHeapStart());
 
-	float clearValue[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	D3D12_VIEWPORT viewport = mViewport;
+	D3D12_RECT scissorRect = mScissorRect;
 
 	for (int mip = 0; mip < mMipLevels; mip++) {
 
-		float roughness = ( float )mip / (mMipLevels - 1);
-		cmdList->SetGraphicsRoot32BitConstant(1, roughness, 0);
-
-		D3D12_VIEWPORT viewport = mViewport;
-		D3D12_RECT scissorRect = mScissorRect;
+		float roughness = (float)mip / (mMipLevels - 1);
+		cmdList->SetGraphicsRoot32BitConstants(1, 1, &roughness, 0);
 
 		cmdList->RSSetViewports(1, &viewport);
 		cmdList->RSSetScissorRects(1, &scissorRect);
