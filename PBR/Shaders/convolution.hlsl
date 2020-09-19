@@ -1,12 +1,14 @@
-static float PI = 3.1415926535897932f;
+static const float PI = 3.1415926535897932f;
 cbuffer cbPerFace
 {
     float3 gLookAt;
     float padding0;
     float3 gUp;
     float padding1;
+    float3 gRight;
+    float padding2;
 };
-TextureCube lightingCube : t0;
+TextureCube lightingCube : register(t0);
 
 SamplerState gsamLinearWrap : register(s0);
 
@@ -43,10 +45,7 @@ VertexOut VS(uint pid : SV_VertexID)
 
 float4 PS(VertexOut pin) : SV_Target
 {
-    float3 gRight = normalize(cross(gUp, gLookAt));
     float3 normalL = pin.PosV;
-
-
 
     float3 normalW = mul(normalL, float3x3(gRight, gUp, gLookAt));
     normalW = normalize(normalW);

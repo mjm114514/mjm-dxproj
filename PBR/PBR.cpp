@@ -5,7 +5,8 @@
 #include "../Common/Camera.h"
 #include "FrameResource.h"
 #include "PBRUtil.h"
-#include "CubeMap.h"
+#include "DiffuseCubeMap.h"
+#include "PreFilteredCubeMap.h"
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
@@ -76,8 +77,6 @@ private:
 	void UpdateMaterialBuffer(const GameTimer& gt);
 	void UpdateMainPassCB(const GameTimer& gt);
 
-	void CreateIBLDiffuseMap();
-
 	void LoadTextures();
     void BuildRootSignature();
 	void BuildDescriptorHeaps();
@@ -111,7 +110,8 @@ private:
 
 	std::unique_ptr<TextureData> mCubeTexture;
 
-	std::unique_ptr<CubeMap> mIBLCubeMap;
+	std::unique_ptr<DiffuseCubeMap> mDiffuseLight;
+	std::unique_ptr<PreFilteredCubeMap> mPrefilteredMap;
 
     std::vector<D3D12_INPUT_ELEMENT_DESC> mInputLayout;
  
@@ -176,8 +176,6 @@ bool PBR::Initialize()
 	mCamera.SetPosition(0.0f, 0.0f, -3.0f);
 
 	LoadTextures();
-
- 
     BuildRootSignature();
 	BuildDescriptorHeaps();
     BuildShadersAndInputLayout();
@@ -193,8 +191,12 @@ bool PBR::Initialize()
     ID3D12CommandList* cmdsLists[] = { mCommandList.Get() };
     mCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
 
-	mIBLCubeMap->DrawToCubeMap(mCommandList.Get());
+	mDiffuseLight->BakeCubeMap(mCommandList.Get());
+    ThrowIfFailed(mCommandList->Close());
+	cmdsLists[0] = mCommandList.Get();
+    mCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
 
+	mPrefilteredMap->BakeCubeMap(mCommandList.Get());
     ThrowIfFailed(mCommandList->Close());
 	cmdsLists[0] = mCommandList.Get();
     mCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
@@ -305,7 +307,7 @@ void PBR::Draw(const GameTimer& gt)
 	mCommandList->SetGraphicsRootDescriptorTable(4, skyHandle);
 
 	CD3DX12_GPU_DESCRIPTOR_HANDLE irradianceHandle(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-	irradianceHandle.Offset(mIBLCubeMap->srvHeapIndex, mCbvSrvDescriptorSize);
+	irradianceHandle.Offset(mDiffuseLight->srvHeapIndex, mCbvSrvDescriptorSize);
 	mCommandList->SetGraphicsRootDescriptorTable(5, irradianceHandle);
 
     DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
@@ -602,9 +604,13 @@ void PBR::LoadTextures()
 	auto uploadResourceFinished = resUpload.End(mCommandQueue.Get());
 	uploadResourceFinished.wait();
 
-	mIBLCubeMap = std::make_unique<CubeMap>(md3dDevice.Get(), mCubeTexture->Resource.Get(), IBLMapSize, IBLMapSize, DXGI_FORMAT_R8G8B8A8_UNORM);
+	mDiffuseLight = std::make_unique<DiffuseCubeMap>(md3dDevice.Get(), mCubeTexture->Resource.Get(), IBLMapSize, IBLMapSize, DXGI_FORMAT_R8G8B8A8_UNORM);
+	mDiffuseLight->srvHeapIndex = ( int )texNames.size() + 1;
+	mDiffuseLight->Initialize();
 
-	mIBLCubeMap->srvHeapIndex = ( int )texNames.size() + 1;
+	mPrefilteredMap = std::make_unique<PreFilteredCubeMap>(md3dDevice.Get(), mCubeTexture->Resource.Get(), IBLMapSize, IBLMapSize, DXGI_FORMAT_R8G8B8A8_UNORM);
+	mPrefilteredMap->srvHeapIndex = ( int )texNames.size() + 1;
+	mPrefilteredMap->Initialize();
 }
 
 void PBR::BuildRootSignature()
@@ -662,7 +668,7 @@ void PBR::BuildDescriptorHeaps()
 	// Create the SRV heap.
 	//
 	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-	srvHeapDesc.NumDescriptors = 20;
+	srvHeapDesc.NumDescriptors = 25;
 	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	ThrowIfFailed(md3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&mSrvDescriptorHeap)));
@@ -700,11 +706,11 @@ void PBR::BuildDescriptorHeaps()
 	);
 	md3dDevice->CreateShaderResourceView(mCubeTexture->Resource.Get(), &srvDesc, hDescriptor);
 
-	ID3D12Resource* IBLResource = mIBLCubeMap->Resource();
-	srvDesc.TextureCube.MipLevels = IBLResource->GetDesc().MipLevels;
-	srvDesc.Format = IBLResource->GetDesc().Format;
+	ID3D12Resource* DiffuseLightResource = mDiffuseLight->Resource();
+	srvDesc.TextureCube.MipLevels = DiffuseLightResource->GetDesc().MipLevels;
+	srvDesc.Format = DiffuseLightResource->GetDesc().Format;
 	hDescriptor.Offset(mCbvSrvDescriptorSize);
-	md3dDevice->CreateShaderResourceView(IBLResource, &srvDesc, hDescriptor);
+	md3dDevice->CreateShaderResourceView(DiffuseLightResource, &srvDesc, hDescriptor);
 }
 
 void PBR::BuildShadersAndInputLayout()

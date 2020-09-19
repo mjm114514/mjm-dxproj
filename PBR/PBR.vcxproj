@@ -147,8 +147,10 @@
     <ClCompile Include="..\Common\GeometryGenerator.cpp" />
     <ClCompile Include="..\Common\MathHelper.cpp" />
     <ClCompile Include="CubeMap.cpp" />
+    <ClCompile Include="DiffuseCubeMap.cpp" />
     <ClCompile Include="FrameResource.cpp" />
     <ClCompile Include="PBR.cpp" />
+    <ClCompile Include="PreFilteredCubeMap.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Common\Camera.h" />
@@ -161,8 +163,10 @@
     <ClInclude Include="..\Common\MathHelper.h" />
     <ClInclude Include="..\Common\UploadBuffer.h" />
     <ClInclude Include="CubeMap.h" />
+    <ClInclude Include="DiffuseCubeMap.h" />
     <ClInclude Include="FrameResource.h" />
     <ClInclude Include="PBRUtil.h" />
+    <ClInclude Include="PreFilteredCubeMap.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
