@@ -21,17 +21,17 @@ struct FaceConstants {
 	float padding2;
 };
 
-class CubeMap{
+class RenderTexture{
 public:
-	CubeMap(ID3D12Device* device, ID3D12Resource* LightMap, UINT width, UINT height, DXGI_FORMAT format);
-	CubeMap(const CubeMap& rhs) = delete;
-	CubeMap& operator=(const CubeMap& rhs) = delete;
-	virtual ~CubeMap() = default;
+	RenderTexture(ID3D12Device* device, UINT width, UINT height, DXGI_FORMAT format);
+	RenderTexture(const RenderTexture& rhs) = delete;
+	RenderTexture& operator=(const RenderTexture& rhs) = delete;
+	virtual ~RenderTexture() = default;
 
 	ID3D12Resource* Resource();
 
 	virtual void OnResize(UINT newWidth, UINT newHeight) = 0;
-	virtual void BakeCubeMap(ID3D12GraphicsCommandList* cmdList) = 0;
+	virtual void BakeTexture(ID3D12GraphicsCommandList* cmdList) = 0;
 
 	UINT srvHeapIndex = 0;
 
@@ -59,9 +59,8 @@ protected:
 	UINT mDsvDescriptorSize;
 	UINT mCbvSrvUavDescriptorSize;
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> mCubeMap = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12Resource> mTextureMap = nullptr;
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> mRtvHeap = nullptr;
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> mSrvHeap = nullptr;
 
 	Microsoft::WRL::ComPtr<ID3DBlob> mVertexShader;
 	Microsoft::WRL::ComPtr<ID3DBlob> mPixelShader;
@@ -70,7 +69,6 @@ protected:
 	Microsoft::WRL::ComPtr<ID3D12CommandAllocator> cmdListAlloc;
 	Microsoft::WRL::ComPtr<ID3D12RootSignature> mRootSignature = nullptr;
 
-	ID3D12Resource* mLightMap = nullptr;
 
 	std::unique_ptr<UploadBuffer<FaceConstants>> faceCB = nullptr;
 };

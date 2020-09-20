@@ -1,8 +1,9 @@
 #include "PreFilteredCubeMap.h"
 
-PreFilteredCubeMap::PreFilteredCubeMap(ID3D12Device* device, ID3D12Resource* lightMap, UINT width, UINT height, DXGI_FORMAT format)
-	:CubeMap(device, lightMap, width, height, format)
+PreFilteredCubeMap::PreFilteredCubeMap(ID3D12Device* device, ID3D12Resource* lightMap, UINT width, UINT height)
+	:RenderTexture(device, width, height, DXGI_FORMAT_R8G8B8A8_UNORM)
 {
+	mLightMap = lightMap;
 }
 
 void PreFilteredCubeMap::BuildResource() {
@@ -26,10 +27,10 @@ void PreFilteredCubeMap::BuildResource() {
 		&texDesc,
 		D3D12_RESOURCE_STATE_GENERIC_READ,
 		nullptr,
-		IID_PPV_ARGS(&mCubeMap)
+		IID_PPV_ARGS(&mTextureMap)
 	));
 
-	mMipLevels = mCubeMap->GetDesc().MipLevels;
+	mMipLevels = mTextureMap->GetDesc().MipLevels;
 }
 
 void PreFilteredCubeMap::BuildDescriptorHeaps() {
@@ -78,7 +79,7 @@ void PreFilteredCubeMap::BuildDescriptors() {
 			rtvDesc.Texture2DArray.ArraySize = 1;
 			rtvDesc.Texture2DArray.FirstArraySlice = i;
 
-			md3dDevice->CreateRenderTargetView(mCubeMap.Get(), &rtvDesc, handle);
+			md3dDevice->CreateRenderTargetView(mTextureMap.Get(), &rtvDesc, handle);
 			handle.Offset(mCbvSrvUavDescriptorSize);
 		}
 	}
@@ -129,7 +130,7 @@ void PreFilteredCubeMap::BuildRootSignature() {
 		0,
 		serializedRootSig->GetBufferPointer(),
 		serializedRootSig->GetBufferSize(),
-		IID_PPV_ARGS(mRootSignature.GetAddressOf())
+		IID_PPV_ARGS(&mRootSignature)
 	));
 }
 
@@ -181,7 +182,7 @@ void PreFilteredCubeMap::OnResize(UINT newWidth, UINT newHeight) {
 	}
 }
 
-void PreFilteredCubeMap::BakeCubeMap(ID3D12GraphicsCommandList* cmdList) {
+void PreFilteredCubeMap::BakeTexture(ID3D12GraphicsCommandList* cmdList) {
 	ThrowIfFailed(md3dDevice->CreateCommandAllocator(
 		D3D12_COMMAND_LIST_TYPE_DIRECT,
 		IID_PPV_ARGS(cmdListAlloc.GetAddressOf())
@@ -200,7 +201,7 @@ void PreFilteredCubeMap::BakeCubeMap(ID3D12GraphicsCommandList* cmdList) {
 	cmdList->ResourceBarrier(
 		1,
 		&CD3DX12_RESOURCE_BARRIER::Transition(
-			mCubeMap.Get(),
+			mTextureMap.Get(),
 			D3D12_RESOURCE_STATE_GENERIC_READ,
 			D3D12_RESOURCE_STATE_RENDER_TARGET
 		)
@@ -245,7 +246,7 @@ void PreFilteredCubeMap::BakeCubeMap(ID3D12GraphicsCommandList* cmdList) {
 	cmdList->ResourceBarrier(
 		1,
 		&CD3DX12_RESOURCE_BARRIER::Transition(
-			mCubeMap.Get(),
+			mTextureMap.Get(),
 			D3D12_RESOURCE_STATE_RENDER_TARGET,
 			D3D12_RESOURCE_STATE_GENERIC_READ
 		)

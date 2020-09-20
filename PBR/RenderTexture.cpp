@@ -1,6 +1,6 @@
-#include "CubeMap.h"
+#include "RenderTexture.h"
 
-CubeMap::CubeMap(ID3D12Device* device, ID3D12Resource* LightMap, UINT width, UINT height, DXGI_FORMAT format) {
+RenderTexture::RenderTexture(ID3D12Device* device, UINT width, UINT height, DXGI_FORMAT format) {
 	md3dDevice = device;
 	mWidth = width;
 	mHeight = height;
@@ -13,11 +13,9 @@ CubeMap::CubeMap(ID3D12Device* device, ID3D12Resource* LightMap, UINT width, UIN
 	mDsvDescriptorSize = md3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 	mCbvSrvUavDescriptorSize = md3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-	mLightMap = LightMap;
-
 }
 
-void CubeMap::Initialize() {
+void RenderTexture::Initialize() {
 	BuildResource();
 	BuildDescriptorHeaps();
 	BuildDescriptors();
@@ -26,11 +24,11 @@ void CubeMap::Initialize() {
 	BuildPso();
 }
 
-ID3D12Resource* CubeMap::Resource() {
-	return mCubeMap.Get();
+ID3D12Resource* RenderTexture::Resource() {
+	return mTextureMap.Get();
 }
 
-void CubeMap::BuildFaceConstant() {
+void RenderTexture::BuildFaceConstant() {
 	float x = 0, y = 0, z = 0;
 
 	DirectX::XMFLOAT3 targets[6] =

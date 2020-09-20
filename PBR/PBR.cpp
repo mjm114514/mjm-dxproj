@@ -7,6 +7,7 @@
 #include "PBRUtil.h"
 #include "DiffuseCubeMap.h"
 #include "PreFilteredCubeMap.h"
+#include "LUTMap.h"
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
@@ -112,6 +113,7 @@ private:
 
 	std::unique_ptr<DiffuseCubeMap> mDiffuseLight;
 	std::unique_ptr<PreFilteredCubeMap> mPrefilteredMap;
+	std::unique_ptr<LUTMap> mLUTMap;
 
     std::vector<D3D12_INPUT_ELEMENT_DESC> mInputLayout;
  
@@ -191,12 +193,17 @@ bool PBR::Initialize()
     ID3D12CommandList* cmdsLists[] = { mCommandList.Get() };
     mCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
 
-	mDiffuseLight->BakeCubeMap(mCommandList.Get());
+	mDiffuseLight->BakeTexture(mCommandList.Get());
     ThrowIfFailed(mCommandList->Close());
 	cmdsLists[0] = mCommandList.Get();
     mCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
 
-	mPrefilteredMap->BakeCubeMap(mCommandList.Get());
+	mPrefilteredMap->BakeTexture(mCommandList.Get());
+    ThrowIfFailed(mCommandList->Close());
+	cmdsLists[0] = mCommandList.Get();
+    mCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
+
+	mLUTMap->BakeTexture(mCommandList.Get());
     ThrowIfFailed(mCommandList->Close());
 	cmdsLists[0] = mCommandList.Get();
     mCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
@@ -302,18 +309,37 @@ void PBR::Draw(const GameTimer& gt)
     // The root signature knows how many descriptors are expected in the table.
 	mCommandList->SetGraphicsRootDescriptorTable(3, mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
+	// Bind sky texture
 	CD3DX12_GPU_DESCRIPTOR_HANDLE skyHandle(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 	skyHandle.Offset(mPrefilteredMap->srvHeapIndex, mCbvSrvDescriptorSize);
 	mCommandList->SetGraphicsRootDescriptorTable(4, skyHandle);
 
+	// Bind irradiance texture
 	CD3DX12_GPU_DESCRIPTOR_HANDLE irradianceHandle(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 	irradianceHandle.Offset(mDiffuseLight->srvHeapIndex, mCbvSrvDescriptorSize);
 	mCommandList->SetGraphicsRootDescriptorTable(5, irradianceHandle);
+
+	// Bind prefilteredMap texture
+	CD3DX12_GPU_DESCRIPTOR_HANDLE prefilteredHandle(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+	prefilteredHandle.Offset(mPrefilteredMap->srvHeapIndex, mCbvSrvDescriptorSize);
+	mCommandList->SetGraphicsRootDescriptorTable(6, prefilteredHandle);
+
+	// Bind LUT map texture
+	CD3DX12_GPU_DESCRIPTOR_HANDLE lutHandle(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+	lutHandle.Offset(mLUTMap->srvHeapIndex, mCbvSrvDescriptorSize);
+	mCommandList->SetGraphicsRootDescriptorTable(7, lutHandle);
 
     DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
 
 	mCommandList->SetPipelineState(mPSOs["sky"].Get());
 	DrawRenderItems(mCommandList.Get(), mRitemLayer[( int )RenderLayer::Sky]);
+
+	// Draw a texture on the quad to check the baking result
+//	mCommandList->SetPipelineState(mPSOs["debug"].Get());
+//	mCommandList->IASetVertexBuffers(0, 0, nullptr);
+//	mCommandList->IASetIndexBuffer(nullptr);
+//	mCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+//	mCommandList->DrawInstanced(6, 1, 0, 0);
 
     // Indicate a state transition on the resource usage.
 	mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(CurrentBackBuffer(),
@@ -605,20 +631,25 @@ void PBR::LoadTextures()
 	auto uploadResourceFinished = resUpload.End(mCommandQueue.Get());
 	uploadResourceFinished.wait();
 
-	mDiffuseLight = std::make_unique<DiffuseCubeMap>(md3dDevice.Get(), mCubeTexture->Resource.Get(), IBLMapSize, IBLMapSize, DXGI_FORMAT_R8G8B8A8_UNORM);
+	mDiffuseLight = std::make_unique<DiffuseCubeMap>(md3dDevice.Get(), mCubeTexture->Resource.Get(), IBLMapSize, IBLMapSize);
 	mDiffuseLight->srvHeapIndex = srvIndex++;
 	mDiffuseLight->Initialize();
 
-	mPrefilteredMap = std::make_unique<PreFilteredCubeMap>(md3dDevice.Get(), mCubeTexture->Resource.Get(), IBLMapSize, IBLMapSize, DXGI_FORMAT_R8G8B8A8_UNORM);
+	mPrefilteredMap = std::make_unique<PreFilteredCubeMap>(md3dDevice.Get(), mCubeTexture->Resource.Get(), IBLMapSize, IBLMapSize);
 	mPrefilteredMap->srvHeapIndex = srvIndex++;
 	mPrefilteredMap->Initialize();
+
+	mLUTMap = std::make_unique<LUTMap>(md3dDevice.Get(), IBLMapSize, IBLMapSize);
+	mLUTMap->srvHeapIndex = srvIndex++;
+	mLUTMap->Initialize();
+
 }
 
 void PBR::BuildRootSignature()
 {
 
 	CD3DX12_DESCRIPTOR_RANGE texTable1;
-	texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 20, 2);
+	texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 20, 4);
 
 	CD3DX12_DESCRIPTOR_RANGE skyTable;
 	skyTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
@@ -626,8 +657,14 @@ void PBR::BuildRootSignature()
 	CD3DX12_DESCRIPTOR_RANGE irradianceTable;
 	irradianceTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
 
+	CD3DX12_DESCRIPTOR_RANGE prefilteredTable;
+	prefilteredTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);
+
+	CD3DX12_DESCRIPTOR_RANGE lutTable;
+	lutTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3);
+
     // Root parameter can be a table, root descriptor or root constants.
-    CD3DX12_ROOT_PARAMETER slotRootParameter[6];
+    CD3DX12_ROOT_PARAMETER slotRootParameter[8];
 
 	// Perfomance TIP: Order from most frequent to least frequent.
     slotRootParameter[0].InitAsConstantBufferView(0); // cbPerObject
@@ -636,6 +673,8 @@ void PBR::BuildRootSignature()
 	slotRootParameter[3].InitAsDescriptorTable(1, &texTable1, D3D12_SHADER_VISIBILITY_PIXEL); // TextureMaps
 	slotRootParameter[4].InitAsDescriptorTable(1, &skyTable, D3D12_SHADER_VISIBILITY_PIXEL); // CubeMap
 	slotRootParameter[5].InitAsDescriptorTable(1, &irradianceTable, D3D12_SHADER_VISIBILITY_PIXEL); // irradianceMap
+	slotRootParameter[6].InitAsDescriptorTable(1, &prefilteredTable, D3D12_SHADER_VISIBILITY_PIXEL); // prefilteredMap
+	slotRootParameter[7].InitAsDescriptorTable(1, &lutTable, D3D12_SHADER_VISIBILITY_PIXEL);      // LUTMap
 
 	auto staticSamplers = GetStaticSamplers();
 
@@ -718,6 +757,16 @@ void PBR::BuildDescriptorHeaps()
 	srvDesc.Format = PrefilteredReource->GetDesc().Format;
 	hDescriptor.Offset(mCbvSrvDescriptorSize);
 	md3dDevice->CreateShaderResourceView(PrefilteredReource, &srvDesc, hDescriptor);
+
+	ID3D12Resource* LUTMapResource = mLUTMap->Resource();
+	srvDesc.Format = DXGI_FORMAT_R32G32_FLOAT;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Texture2D.MipLevels = LUTMapResource->GetDesc().MipLevels;
+	srvDesc.Texture2D.MostDetailedMip = 0;
+	srvDesc.Texture2D.PlaneSlice = 0;
+	srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
+	hDescriptor.Offset(mCbvSrvDescriptorSize);
+	md3dDevice->CreateShaderResourceView(LUTMapResource, &srvDesc, hDescriptor);
 }
 
 void PBR::BuildShadersAndInputLayout()
@@ -732,6 +781,9 @@ void PBR::BuildShadersAndInputLayout()
 	mShaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\PBR.hlsl", nullptr, "PS", "ps_5_1");
 	mShaders["skyVS"] = d3dUtil::CompileShader(L"Shaders\\sky.hlsl", nullptr, "VS", "vs_5_1");
 	mShaders["skyPS"] = d3dUtil::CompileShader(L"Shaders\\sky.hlsl", nullptr, "PS", "ps_5_1");
+
+	mShaders["debugVS"] = d3dUtil::CompileShader(L"Shaders\\watchTexture.hlsl", nullptr, "VS", "vs_5_1");
+	mShaders["debugPS"] = d3dUtil::CompileShader(L"Shaders\\watchTexture.hlsl", nullptr, "PS", "ps_5_1");
 
     mInputLayout =
     {
@@ -914,6 +966,19 @@ void PBR::BuildPSOs()
 	skyPsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
 	skyPsoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
 	ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&skyPsoDesc, IID_PPV_ARGS(&mPSOs["sky"])));
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC debugPso = opaquePsoDesc;
+	debugPso.VS = {
+		reinterpret_cast< BYTE* >(mShaders["debugVS"]->GetBufferPointer()),
+		mShaders["debugVS"]->GetBufferSize()
+	};
+	debugPso.PS = {
+		reinterpret_cast< BYTE* >(mShaders["debugPS"]->GetBufferPointer()),
+		mShaders["debugPS"]->GetBufferSize()
+	};
+	debugPso.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+	debugPso.DepthStencilState.DepthEnable = false;
+	ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&debugPso, IID_PPV_ARGS(&mPSOs["debug"])));
 }
 
 void PBR::BuildFrameResources()

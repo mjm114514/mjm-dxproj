@@ -1,9 +1,9 @@
 #include "DiffuseCubeMap.h"
 
-DiffuseCubeMap::DiffuseCubeMap(ID3D12Device* device, ID3D12Resource* lightMap, UINT width, UINT height, DXGI_FORMAT format)
-	: CubeMap(device, lightMap, width, height, format)
+DiffuseCubeMap::DiffuseCubeMap(ID3D12Device* device, ID3D12Resource* lightMap, UINT width, UINT height)
+	: RenderTexture(device, width, height, DXGI_FORMAT_R8G8B8A8_UNORM)
 {
-
+	mLightMap = lightMap;
 }
 
 
@@ -29,7 +29,7 @@ void DiffuseCubeMap::BuildResource() {
 		&texDesc,
 		D3D12_RESOURCE_STATE_GENERIC_READ,
 		nullptr,
-		IID_PPV_ARGS(&mCubeMap)
+		IID_PPV_ARGS(&mTextureMap)
 	));
 
 }
@@ -81,7 +81,7 @@ void DiffuseCubeMap::BuildDescriptors() {
 		rtvDesc.Texture2DArray.ArraySize = 1;
 		rtvDesc.Texture2DArray.FirstArraySlice = i;
 
-		md3dDevice->CreateRenderTargetView(mCubeMap.Get(), &rtvDesc, mhCpuRtv[i]);
+		md3dDevice->CreateRenderTargetView(mTextureMap.Get(), &rtvDesc, mhCpuRtv[i]);
 	}
 }
 
@@ -185,7 +185,7 @@ void DiffuseCubeMap::OnResize(UINT newWidth, UINT newHeight) {
 	}
 }
 
-void DiffuseCubeMap::BakeCubeMap(ID3D12GraphicsCommandList* cmdList) {
+void DiffuseCubeMap::BakeTexture(ID3D12GraphicsCommandList* cmdList) {
 	ThrowIfFailed(md3dDevice->CreateCommandAllocator(
 		D3D12_COMMAND_LIST_TYPE_DIRECT,
 		IID_PPV_ARGS(cmdListAlloc.GetAddressOf())
@@ -207,7 +207,7 @@ void DiffuseCubeMap::BakeCubeMap(ID3D12GraphicsCommandList* cmdList) {
 	cmdList->ResourceBarrier(
 		1,
 		&CD3DX12_RESOURCE_BARRIER::Transition(
-			mCubeMap.Get(),
+			mTextureMap.Get(),
 			D3D12_RESOURCE_STATE_GENERIC_READ,
 			D3D12_RESOURCE_STATE_RENDER_TARGET
 		)
@@ -231,7 +231,7 @@ void DiffuseCubeMap::BakeCubeMap(ID3D12GraphicsCommandList* cmdList) {
 	cmdList->ResourceBarrier(
 		1,
 		&CD3DX12_RESOURCE_BARRIER::Transition(
-			mCubeMap.Get(),
+			mTextureMap.Get(),
 			D3D12_RESOURCE_STATE_RENDER_TARGET,
 			D3D12_RESOURCE_STATE_GENERIC_READ
 		)
