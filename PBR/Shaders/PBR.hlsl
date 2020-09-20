@@ -99,6 +99,7 @@ float4 PS(VertexOut pin) : SV_Target
     N = normalize(N);
     float3 V = normalize(gEyePosW - pin.PosW);
 
+
     float3 albedo = Mat.albedo * gTextureMaps[Mat.albedoMapIndex].Sample(gsamAnisotropicClamp, pin.TexC).rgb;
     float metallic = Mat.metallic * gTextureMaps[Mat.metallicMapIndex].Sample(gsamLinearClamp, pin.TexC).x;
     float roughness = Mat.roughness * gTextureMaps[Mat.roughnessMapIndex].Sample(gsamLinearClamp, pin.TexC).x;
@@ -108,6 +109,12 @@ float4 PS(VertexOut pin) : SV_Target
     F0 = lerp(F0, albedo, metallic);
 
     float3 light = float3(0, 0, 0);
+
+    float3 R = reflect(-V, N);
+    float3 prefilteredColor = gPrefilterdMap.SampleLevel(gsamLinearWrap, R, roughness * gPrefilteredMapMipLevels).rgb;
+    float3 F = fresnelSchlickRoughness(max(dot(N, V), 0), F0, roughness);
+    float2 envBRDF = gLUTMap.Sample(gsamLinearWrap, float2(max(dot(N, V), 0), roughness)).rg;
+    float3 specular = prefilteredColor * (F * envBRDF.x + envBRDF.y);
 
     for (int i = 0; i < 4; i++)
     {
@@ -139,7 +146,7 @@ float4 PS(VertexOut pin) : SV_Target
     float3 kd = 1.0 - ks;
     float3 irradiance = gIrradianceMap.Sample(gsamLinearWrap, N).rgb;
     float3 diffuse = irradiance * albedo;
-    float3 ambient = (kd * diffuse) * ao;
+    float3 ambient = (kd * diffuse + specular) * ao;
 
     float3 color = ambient + light;
     color = color / (color + float3(1, 1, 1));

@@ -45,7 +45,6 @@ Texture2D gTextureMaps[20] : register(t4);
 
 StructuredBuffer<MaterialData> gMaterialData : register(t0, space1);
 
-
 SamplerState gsamPointWrap        : register(s0);
 SamplerState gsamPointClamp       : register(s1);
 SamplerState gsamLinearWrap       : register(s2);
@@ -75,7 +74,7 @@ cbuffer cbPass : register(b1)
     float4x4 gViewProj;
     float4x4 gInvViewProj;
     float3 gEyePosW;
-    float cbPerObjectPad1;
+    uint gPrefilteredMapMipLevels;
     float2 gRenderTargetSize;
     float2 gInvRenderTargetSize;
     float gNearZ;

@@ -498,6 +498,8 @@ void PBR::UpdateMainPassCB(const GameTimer& gt)
 	mMainPassCB.DeltaTime = gt.DeltaTime();
 	mMainPassCB.AmbientLight = { 0.25f, 0.25f, 0.35f, 1.0f };
 
+	mMainPassCB.PrefilteredMipLevel = mPrefilteredMap->Resource()->GetDesc().MipLevels;
+
 	mMainPassCB.Lights[0].LightPosAndDir = XMFLOAT3(-10, 10, 10);
 	mMainPassCB.Lights[1].LightPosAndDir = XMFLOAT3(10, 10, 10);
 	mMainPassCB.Lights[2].LightPosAndDir = XMFLOAT3(-10, -10, 10);
