@@ -68,9 +68,6 @@
     <ClInclude Include="..\Common\d3dx12.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\Common\DDSTextureLoader.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\Common\GameTimer.h">
       <Filter>Header Files</Filter>
     </ClInclude>

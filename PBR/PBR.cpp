@@ -618,7 +618,7 @@ void PBR::LoadTextures()
 	}
 	UINT srvIndex = texNames.size();
 	mCubeTexture = std::make_unique<TextureData>();
-	mCubeTexture->FileName = L"../Textures/Cubemap_LancellottiChapel.dds";
+	mCubeTexture->FileName = L"../Textures/snowcube1024.dds";
 	mCubeTexture->isDDS = true;
 	mCubeTexture->srvHeapIndex = srvIndex++;
 	ThrowIfFailed(CreateDDSTextureFromFileEx(

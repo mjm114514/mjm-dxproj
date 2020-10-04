@@ -113,7 +113,7 @@ float4 PS(VertexOut pin) : SV_Target
     float3 R = reflect(-V, N);
     float3 prefilteredColor = gPrefilterdMap.SampleLevel(gsamLinearWrap, R, roughness * gPrefilteredMapMipLevels).rgb;
     float3 F = fresnelSchlickRoughness(max(dot(N, V), 0), F0, roughness);
-    float2 envBRDF = gLUTMap.Sample(gsamLinearWrap, float2(max(dot(N, V), 0), roughness)).rg;
+    float2 envBRDF = gLUTMap.Sample(gsamLinearClamp, float2(max(dot(N, V), 0), roughness)).rg;
     float3 specular = prefilteredColor * (F * envBRDF.x + envBRDF.y);
 
     for (int i = 0; i < 4; i++)
