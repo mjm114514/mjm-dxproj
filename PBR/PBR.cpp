@@ -530,6 +530,8 @@ void PBR::LoadTextures()
 		"plastic_metallic",
 		"plastic_roughness",
 		"plastic_normal",
+
+		"test"
 	};
 
 	std::vector<bool> isSrgb = {
@@ -543,6 +545,7 @@ void PBR::LoadTextures()
 		false,
 		// gold
 		true,
+		false,
 		false,
 		false,
 		false,
@@ -563,6 +566,8 @@ void PBR::LoadTextures()
 		L"../textures-nondds/pbr/gold/metallic.png",
 		L"../textures-nondds/pbr/gold/roughness.png",
 		L"../textures-nondds/pbr/gold/normal.png",
+
+		L"D:\download\Cerberus_by_Andrew_Maximov\Textures\Cerberus_M.tga"
 	};
 
 	std::vector<bool> isDDS = {
@@ -575,6 +580,7 @@ void PBR::LoadTextures()
 		false,
 		false,
 		// gold
+		false,
 		false,
 		false,
 		false,
@@ -618,7 +624,7 @@ void PBR::LoadTextures()
 	}
 	UINT srvIndex = texNames.size();
 	mCubeTexture = std::make_unique<TextureData>();
-	mCubeTexture->FileName = L"../Textures/snowcube1024.dds";
+	mCubeTexture->FileName = L"../Textures/Cubemap_LancellottiChapel.dds";
 	mCubeTexture->isDDS = true;
 	mCubeTexture->srvHeapIndex = srvIndex++;
 	ThrowIfFailed(CreateDDSTextureFromFileEx(
