@@ -7,27 +7,24 @@
 #include "FrameResource.h"
 #include "../Common/d3dUtil.h"
 
-using namespace std;
-
-
-
 struct Mesh {
-	vector<Vertex> vertices;
-	vector<uint32_t> indices;
+	std::vector<Vertex> vertices;
+	std::vector<uint32_t> indices;
 };
 
 class Model {
 public:
-	Model(string path) {
+	Model(std::string path) {
 		loadModel(path);
 	}
-	vector<Mesh> meshes;
+	std::vector<Mesh> meshes;
 
-	UINT totalIndexCount;
-	UINT totalVertexCount;
+	UINT totalVertexCount = 0;
+	UINT totalIndexCount = 0;
+
 private:
 
-	void loadModel(string path);
+	void loadModel(std::string path);
 	void processNode(aiNode* node, const aiScene* scene);
 	Mesh processMesh(aiMesh* node, const aiScene* scene);
 };

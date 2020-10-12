@@ -533,7 +533,10 @@ void PBR::LoadTextures()
 		"plastic_roughness",
 		"plastic_normal",
 
-		"test"
+		"mesh_albedo",
+		"mesh_metallic",
+		"mesh_roughness",
+		"mesh_normal",
 	};
 
 	std::vector<bool> isSrgb = {
@@ -549,6 +552,10 @@ void PBR::LoadTextures()
 		true,
 		false,
 		false,
+		false,
+		false,
+		// mesh
+		true,
 		false,
 		false,
 		false,
@@ -569,7 +576,10 @@ void PBR::LoadTextures()
 		L"../textures-nondds/pbr/gold/roughness.png",
 		L"../textures-nondds/pbr/gold/normal.png",
 
-		L"D:\download\Cerberus_by_Andrew_Maximov\Textures\Cerberus_M.tga"
+		L"../texture-nondds/pbr/cerberus/albedo",
+		L"../texture-nondds/pbr/cerberus/metallic",
+		L"../texture-nondds/pbr/cerberus/roughness",
+		L"../texture-nondds/pbr/cerberus/normal",
 	};
 
 	std::vector<bool> isDDS = {
@@ -583,6 +593,11 @@ void PBR::LoadTextures()
 		false,
 		// gold
 		false,
+		false,
+		false,
+		false,
+		false,
+		// mesh
 		false,
 		false,
 		false,
@@ -718,7 +733,7 @@ void PBR::BuildDescriptorHeaps()
 	// Create the SRV heap.
 	//
 	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-	srvHeapDesc.NumDescriptors = 25;
+	srvHeapDesc.NumDescriptors = 30;
 	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	ThrowIfFailed(md3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&mSrvDescriptorHeap)));
@@ -807,8 +822,50 @@ void PBR::BuildShadersAndInputLayout()
 void PBR::BuildMeshes() {
 	Model model("..\Models\Cerberus_LP.obj");
 
-	for (UINT i = 0; i < model.meshes.size(); i++) {
+	std::vector<Vertex> vertices(model.totalVertexCount);
+	std::vector<uint16_t> indices(model.totalIndexCount);
+
+	uint16_t startVertex = 0;
+	for (Mesh &mesh: model.meshes) {
+		for (int i = 0; i < mesh.vertices.size(); i++) {
+			vertices[i] = mesh.vertices[i];
+		}
+		for (int i = 0; i < mesh.indices.size(); i++) {
+			indices[i] = mesh.indices[i] + startVertex;
+		}
+		startVertex += vertices.size();
 	}
+
+	UINT vbByteSize = model.totalIndexCount * sizeof(Vertex);
+	UINT ibByteSize = model.totalIndexCount * sizeof(std::uint16_t);
+
+	auto geo = std::make_unique<MeshGeometry>();
+	geo->Name = "Mesh";
+	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+
+	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),
+		mCommandList.Get(), vertices.data(), vbByteSize, geo->VertexBufferUploader);
+
+	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),
+		mCommandList.Get(), indices.data(), ibByteSize, geo->IndexBufferUploader);
+
+	geo->VertexByteStride = sizeof(Vertex);
+	geo->VertexBufferByteSize = vbByteSize;
+	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+	geo->IndexBufferByteSize = ibByteSize;
+
+	SubmeshGeometry subMesh;
+	subMesh.BaseVertexLocation = 0;
+	subMesh.IndexCount = indices.size();
+	subMesh.StartIndexLocation = 0;
+
+	geo->DrawArgs["Mesh"] = subMesh;
+
+	mGeometries[geo->Name] = std::move(geo);
 }
 
 void PBR::BuildShapeGeometry()
@@ -1056,6 +1113,20 @@ void PBR::BuildMaterials()
 	plastic->RoughnessTex = mTextures["plastic_roughness"].get();
 	plastic->NormalTex = mTextures["plastic_normal"].get();
 	mMaterials[plastic->Name] = std::move(plastic);
+
+	auto mesh = std::make_unique<MaterialObj>();
+	mesh->Name = "mesh";
+	mesh->MatCBIndex = index++;
+	mesh->albedo = XMFLOAT3(1, 1, 1);
+	mesh->AO = 1.0f;
+	mesh->Metallic = 1.0f;
+	mesh->Roughness = 1.0f;
+	mesh->AlbedoTex = mTextures["mesh_albedo"].get();
+	mesh->MetallicTex = mTextures["mesh_metallic"].get();
+	mesh->AOTex = mTextures["default"].get();
+	mesh->RoughnessTex = mTextures["mesh_roughness"].get();
+	mesh->NormalTex = mTextures["mesh_normal"].get();
+	mMaterials[mesh->Name] = std::move(mesh);
 }
 
 void PBR::BuildRenderItems()
@@ -1121,6 +1192,19 @@ void PBR::BuildRenderItems()
 	sky->IndexCount = sky->Geo->DrawArgs["sphere"].IndexCount;
 	sky->StartIndexLocation = sky->Geo->DrawArgs["sphere"].StartIndexLocation;
 	sky->BaseVertexLocation = sky->Geo->DrawArgs["sphere"].BaseVertexLocation;
+
+	mRitemLayer[( int )RenderLayer::Sky].push_back(sky.get());
+	mAllRitems.push_back(std::move(sky));
+
+	auto gun = std::make_unique<RenderItem>();
+	gun->TexTransform = MathHelper::Identity4x4();
+	gun->ObjCBIndex = index++;
+	gun->Mat = mMaterials["mesh"].get();
+	gun->Geo = mGeometries["mesh"].get();
+	gun->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	gun->IndexCount = gun->Geo->DrawArgs["mesh"].IndexCount;
+	gun->StartIndexLocation = gun->Geo->DrawArgs["mesh"].StartIndexLocation;
+	gun->BaseVertexLocation = gun->Geo->DrawArgs["mesh"].BaseVertexLocation;
 
 	mRitemLayer[( int )RenderLayer::Sky].push_back(sky.get());
 	mAllRitems.push_back(std::move(sky));
