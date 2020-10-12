@@ -5,26 +5,29 @@
 #include <vector>
 
 #include "FrameResource.h"
+#include "../Common/d3dUtil.h"
 
 using namespace std;
 
 
 
 struct Mesh {
-public:
 	vector<Vertex> vertices;
 	vector<uint32_t> indices;
 };
 
 class Model {
 public:
-	Model(char* path) {
+	Model(string path) {
 		loadModel(path);
 	}
-private:
 	vector<Mesh> meshes;
+
+	UINT totalIndexCount;
+	UINT totalVertexCount;
+private:
 
 	void loadModel(string path);
 	void processNode(aiNode* node, const aiScene* scene);
-	Mesh processMesh(aiNode* node, const aiScene* scene);
+	Mesh processMesh(aiMesh* node, const aiScene* scene);
 };

@@ -8,6 +8,7 @@
 #include "DiffuseCubeMap.h"
 #include "PreFilteredCubeMap.h"
 #include "LUTMap.h"
+#include "MeshLoader.h"
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
@@ -83,6 +84,7 @@ private:
 	void BuildDescriptorHeaps();
     void BuildShadersAndInputLayout();
     void BuildShapeGeometry();
+	void BuildMeshes();
     void BuildPSOs();
     void BuildFrameResources();
     void BuildMaterials();
@@ -800,6 +802,13 @@ void PBR::BuildShadersAndInputLayout()
 		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		{ "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 32, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
     };
+}
+
+void PBR::BuildMeshes() {
+	Model model("..\Models\Cerberus_LP.obj");
+
+	for (UINT i = 0; i < model.meshes.size(); i++) {
+	}
 }
 
 void PBR::BuildShapeGeometry()
