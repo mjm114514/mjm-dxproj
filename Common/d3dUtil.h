@@ -6,6 +6,7 @@
 
 #pragma once
 
+#define NOMINMAX
 #include <windows.h>
 #include <wrl.h>
 #include <dxgi1_4.h>

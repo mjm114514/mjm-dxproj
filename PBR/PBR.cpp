@@ -184,6 +184,7 @@ bool PBR::Initialize()
 	BuildDescriptorHeaps();
     BuildShadersAndInputLayout();
     BuildShapeGeometry();
+	BuildMeshes();
 	BuildMaterials();
     BuildRenderItems();
     BuildFrameResources();
@@ -576,10 +577,10 @@ void PBR::LoadTextures()
 		L"../textures-nondds/pbr/gold/roughness.png",
 		L"../textures-nondds/pbr/gold/normal.png",
 
-		L"../texture-nondds/pbr/cerberus/albedo",
-		L"../texture-nondds/pbr/cerberus/metallic",
-		L"../texture-nondds/pbr/cerberus/roughness",
-		L"../texture-nondds/pbr/cerberus/normal",
+		L"../textures-nondds/pbr/cerberus/albedo.png",
+		L"../textures-nondds/pbr/cerberus/metallic.png",
+		L"../textures-nondds/pbr/cerberus/roughness.png",
+		L"../textures-nondds/pbr/cerberus/normal.png",
 	};
 
 	std::vector<bool> isDDS = {
@@ -598,7 +599,6 @@ void PBR::LoadTextures()
 		false,
 		false,
 		// mesh
-		false,
 		false,
 		false,
 		false,
@@ -820,7 +820,7 @@ void PBR::BuildShadersAndInputLayout()
 }
 
 void PBR::BuildMeshes() {
-	Model model("..\Models\Cerberus_LP.obj");
+	Model model("..\\Models\\Cerberus_LP.obj");
 
 	std::vector<Vertex> vertices(model.totalVertexCount);
 	std::vector<uint16_t> indices(model.totalIndexCount);
@@ -840,7 +840,7 @@ void PBR::BuildMeshes() {
 	UINT ibByteSize = model.totalIndexCount * sizeof(std::uint16_t);
 
 	auto geo = std::make_unique<MeshGeometry>();
-	geo->Name = "Mesh";
+	geo->Name = "mesh";
 	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
 	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
 
@@ -863,7 +863,7 @@ void PBR::BuildMeshes() {
 	subMesh.IndexCount = indices.size();
 	subMesh.StartIndexLocation = 0;
 
-	geo->DrawArgs["Mesh"] = subMesh;
+	geo->DrawArgs["mesh"] = subMesh;
 
 	mGeometries[geo->Name] = std::move(geo);
 }
