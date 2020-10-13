@@ -31,6 +31,7 @@ struct MaterialObj {
 enum class RenderLayer : int
 {
 	Opaque = 0,
+	Gun,
 	Sky,
 	Count
 };
