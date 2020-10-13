@@ -823,7 +823,7 @@ void PBR::BuildMeshes() {
 	Model model("..\\Models\\Cerberus_LP.obj");
 
 	std::vector<Vertex> vertices(model.totalVertexCount);
-	std::vector<uint16_t> indices(model.totalIndexCount);
+	std::vector<uint32_t> indices(model.totalIndexCount);
 
 	uint16_t startVertex = 0;
 	for (Mesh &mesh: model.meshes) {
@@ -837,7 +837,7 @@ void PBR::BuildMeshes() {
 	}
 
 	UINT vbByteSize = model.totalIndexCount * sizeof(Vertex);
-	UINT ibByteSize = model.totalIndexCount * sizeof(std::uint16_t);
+	UINT ibByteSize = model.totalIndexCount * sizeof(std::uint32_t);
 
 	auto geo = std::make_unique<MeshGeometry>();
 	geo->Name = "mesh";
@@ -855,7 +855,7 @@ void PBR::BuildMeshes() {
 
 	geo->VertexByteStride = sizeof(Vertex);
 	geo->VertexBufferByteSize = vbByteSize;
-	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+	geo->IndexFormat = DXGI_FORMAT_R32_UINT;
 	geo->IndexBufferByteSize = ibByteSize;
 
 	SubmeshGeometry subMesh;
@@ -1197,6 +1197,7 @@ void PBR::BuildRenderItems()
 	mAllRitems.push_back(std::move(sky));
 
 	auto gun = std::make_unique<RenderItem>();
+	XMStoreFloat4x4(&gun->World, XMMatrixScaling(0.1, 0.1, 0.1) * XMMatrixTranslation(0, 0, 20));
 	gun->TexTransform = MathHelper::Identity4x4();
 	gun->ObjCBIndex = index++;
 	gun->Mat = mMaterials["mesh"].get();
@@ -1206,8 +1207,8 @@ void PBR::BuildRenderItems()
 	gun->StartIndexLocation = gun->Geo->DrawArgs["mesh"].StartIndexLocation;
 	gun->BaseVertexLocation = gun->Geo->DrawArgs["mesh"].BaseVertexLocation;
 
-	mRitemLayer[( int )RenderLayer::Sky].push_back(sky.get());
-	mAllRitems.push_back(std::move(sky));
+	mRitemLayer[( int )RenderLayer::Opaque].push_back(gun.get());
+	mAllRitems.push_back(std::move(gun));
 }
 
 void PBR::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritems)
