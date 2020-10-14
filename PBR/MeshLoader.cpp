@@ -48,7 +48,7 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene) {
             vertex.TexC.y = mesh->mTextureCoords[0][i].y;
         }
 
-		vertices[i] = vertex;
+        vertices.push_back(vertex);
     }
 
 	std::vector<uint8_t> shareCount(vertices.size(), 0);

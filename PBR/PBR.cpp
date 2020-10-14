@@ -1197,7 +1197,6 @@ void PBR::BuildRenderItems()
 	mAllRitems.push_back(std::move(sky));
 
 	auto gun = std::make_unique<RenderItem>();
-	XMStoreFloat4x4(&gun->World, XMMatrixScaling(0.1, 0.1, 0.1));
 	gun->TexTransform = MathHelper::Identity4x4();
 	gun->ObjCBIndex = index++;
 	gun->Mat = mMaterials["mesh"].get();
@@ -1207,8 +1206,8 @@ void PBR::BuildRenderItems()
 	gun->StartIndexLocation = gun->Geo->DrawArgs["mesh"].StartIndexLocation;
 	gun->BaseVertexLocation = gun->Geo->DrawArgs["mesh"].BaseVertexLocation;
 
-	mRitemLayer[( int )RenderLayer::Gun].push_back(gun.get());
-	mAllRitems.push_back(std::move(gun));
+	mRitemLayer[( int )RenderLayer::Sky].push_back(sky.get());
+	mAllRitems.push_back(std::move(sky));
 }
 
 void PBR::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritems)
