@@ -152,6 +152,9 @@ float4 PS(VertexOut pin) : SV_Target
     color = color / (color + float3(1, 1, 1));
     color = pow(color, float3(1.0 / 2.2, 1.0 / 2.2, 1.0 / 2.2));
 
+    // return float4(localNormal, 1.0f);
+    // return float4((normalize(pin.NormalW) + 1.0f) / 2, 1.0f);
+
     return float4(color, 1);
 }
 

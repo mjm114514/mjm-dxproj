@@ -48,7 +48,10 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene) {
             vertex.TexC.y = mesh->mTextureCoords[0][i].y;
         }
 
-        vertices.push_back(vertex);
+        vertices[i] = vertex;
+		vertices[i].TangentU.x = 0;
+		vertices[i].TangentU.y = 0;
+		vertices[i].TangentU.z = 0;
     }
 
 	std::vector<uint8_t> shareCount(vertices.size(), 0);
@@ -63,9 +66,9 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene) {
 		v[2] = vertices[face.mIndices[2]];
 
 		DirectX::XMFLOAT3 e1(
-			v[1].Pos.x - v[0].Pos.x,
-			v[1].Pos.y - v[0].Pos.y,
-			v[1].Pos.z - v[0].Pos.z
+			v[0].Pos.x - v[1].Pos.x,
+			v[0].Pos.y - v[1].Pos.y,
+			v[0].Pos.z - v[1].Pos.z
 		);
 		DirectX::XMFLOAT3 e2(
 			v[2].Pos.x - v[0].Pos.x,
@@ -81,15 +84,23 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene) {
 		float v1 = v[1].TexC.y;
 		float v2 = v[2].TexC.y;
 
-		float denom = (u1 - u0) * (v2 - v0) - (u2 - u0) * (v1 - v0);
-
-		float para1 = v2 - v0;
-		float para2 = -(v1 - v0);
+		float para1 = v0 - v1;
+		float para2 = v2 - v1;
 
 		DirectX::XMFLOAT3 tangent;
-		tangent.x = (e1.x * para1 + e2.x * para2) / denom;
-		tangent.y = (e1.y * para1 + e2.y * para2) / denom;
-		tangent.z = (e1.z * para1 + e2.z * para2) / denom;
+		tangent.x = (-e1.x * para2 + e2.x * para1);
+		tangent.y = (-e1.y * para2 + e2.y * para1);
+		tangent.z = (-e1.z * para2 + e2.z * para1);
+
+		float length = tangent.x * tangent.x + tangent.y * tangent.y + tangent.z * tangent.z;
+		length = sqrt(length);
+
+		tangent.x /= length;
+		tangent.y /= length;
+		tangent.z /= length;
+
+		float deltaU1 = u0 - u1;
+		float deltaU2 = u2 - u0;
 
 		vertices[face.mIndices[0]].TangentU.x += tangent.x;
 		vertices[face.mIndices[0]].TangentU.y += tangent.y;

@@ -332,7 +332,7 @@ void PBR::Draw(const GameTimer& gt)
 	lutHandle.Offset(mLUTMap->srvHeapIndex, mCbvSrvDescriptorSize);
 	mCommandList->SetGraphicsRootDescriptorTable(7, lutHandle);
 
-    DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Gun]);
+    DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
 
 	mCommandList->SetPipelineState(mPSOs["sky"].Get());
 	DrawRenderItems(mCommandList.Get(), mRitemLayer[( int )RenderLayer::Sky]);
@@ -566,11 +566,13 @@ void PBR::LoadTextures()
 	{
 		L"../Textures/white1x1.dds",
 		L"../Textures/default_nmap.dds",
+
 		L"../textures-nondds/pbr/rusted_iron/albedo.png",
 		L"../textures-nondds/pbr/rusted_iron/ao.png",
 		L"../textures-nondds/pbr/rusted_iron/metallic.png",
 		L"../textures-nondds/pbr/rusted_iron/roughness.png",
 		L"../textures-nondds/pbr/rusted_iron/normal.png",
+
 		L"../textures-nondds/pbr/gold/albedo.png",
 		L"../textures-nondds/pbr/gold/ao.png",
 		L"../textures-nondds/pbr/gold/metallic.png",
@@ -632,7 +634,7 @@ void PBR::LoadTextures()
 				texMap->FileName.c_str(),
 				0,
 				D3D12_RESOURCE_FLAG_NONE,
-				WIC_LOADER_MIP_AUTOGEN | (isSrgb[i] ? WIC_LOADER_FORCE_SRGB : WIC_LOADER_DEFAULT),
+				WIC_LOADER_MIP_AUTOGEN | (isSrgb[i] ? WIC_LOADER_SRGB_DEFAULT : WIC_LOADER_DEFAULT | WIC_LOADER_IGNORE_SRGB),
 				texMap->Resource.ReleaseAndGetAddressOf()
 			));
 		}
@@ -1197,7 +1199,7 @@ void PBR::BuildRenderItems()
 	mAllRitems.push_back(std::move(sky));
 
 	auto gun = std::make_unique<RenderItem>();
-	gun->TexTransform = MathHelper::Identity4x4();
+	XMStoreFloat4x4(&gun->World, XMMatrixScaling(0.1, 0.1, 0.1) * XMMatrixTranslation(0, 0, 20));
 	gun->ObjCBIndex = index++;
 	gun->Mat = mMaterials["mesh"].get();
 	gun->Geo = mGeometries["mesh"].get();
@@ -1206,8 +1208,8 @@ void PBR::BuildRenderItems()
 	gun->StartIndexLocation = gun->Geo->DrawArgs["mesh"].StartIndexLocation;
 	gun->BaseVertexLocation = gun->Geo->DrawArgs["mesh"].BaseVertexLocation;
 
-	mRitemLayer[( int )RenderLayer::Sky].push_back(sky.get());
-	mAllRitems.push_back(std::move(sky));
+	mRitemLayer[( int )RenderLayer::Opaque].push_back(gun.get());
+	mAllRitems.push_back(std::move(gun));
 }
 
 void PBR::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritems)
